@@ -19,6 +19,7 @@
     .line 13
     invoke-static {}, Lcom/bank/pay/Helper;->ping()V
     .line 15
-    const/4 v1, 0x1
+    invoke-virtual {p1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+    move-result v1
     return v1
 .end method
