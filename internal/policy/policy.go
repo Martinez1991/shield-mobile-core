@@ -133,13 +133,19 @@ func Preset(name string) Policy {
 
 // Load parses a JSON policy file.
 func Load(path string) (Policy, error) {
-	p := Default()
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return p, err
+		return Default(), err
 	}
+	return Parse(raw)
+}
+
+// Parse parses a JSON policy from bytes, starting from Default() so omitted
+// fields keep their conservative defaults.
+func Parse(raw []byte) (Policy, error) {
+	p := Default()
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return p, fmt.Errorf("invalid policy %s: %w", path, err)
+		return p, fmt.Errorf("invalid policy: %w", err)
 	}
 	return p, p.Validate()
 }
