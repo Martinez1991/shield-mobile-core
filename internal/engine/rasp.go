@@ -81,6 +81,50 @@ func RASPClass(base string) *smali.Class {
     return v0
 .end method
 
+.method public static hasXposed()Z
+    .locals 1
+    :try_start_0
+    const-string v0, "de.robv.android.xposed.XposedBridge"
+    invoke-static {v0}, Ljava/lang/Class;->forName(Ljava/lang/String;)Ljava/lang/Class;
+    const/4 v0, 0x1
+    return v0
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+    :catch_0
+    const/4 v0, 0x0
+    return v0
+.end method
+
+# Frida default control port. Not called from flags() by default (a blocking
+# connect must run off the main thread); exposed for the host to schedule.
+.method public static hasFridaPort()Z
+    .locals 3
+    :try_start_0
+    new-instance v0, Ljava/net/Socket;
+    const-string v1, "127.0.0.1"
+    const/16 v2, 0x69a2
+    invoke-direct {v0, v1, v2}, Ljava/net/Socket;-><init>(Ljava/lang/String;I)V
+    invoke-virtual {v0}, Ljava/net/Socket;->close()V
+    const/4 v0, 0x1
+    return v0
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+    :catch_0
+    const/4 v0, 0x0
+    return v0
+.end method
+
+# Deferred reaction primitive (section 6.1). The host decides policy; this is the
+# blunt fallback: terminate when any flag is set. Kept decoupled from detection.
+.method public static react(I)V
+    .locals 1
+    if-eqz p0, :ok
+    const/4 v0, 0x1
+    invoke-static {v0}, Ljava/lang/System;->exit(I)V
+    :ok
+    return-void
+.end method
+
 .method public static flags()I
     .locals 2
     const/4 v0, 0x0
@@ -99,6 +143,11 @@ func RASPClass(base string) *smali.Class {
     if-eqz v1, :c
     or-int/lit8 v0, v0, 0x4
     :c
+    invoke-static {}, Lshield/rt/RASP;->hasXposed()Z
+    move-result v1
+    if-eqz v1, :d
+    or-int/lit8 v0, v0, 0x8
+    :d
     return v0
 .end method
 `

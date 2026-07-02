@@ -59,6 +59,17 @@ func Run(root string, p policy.Policy) (*Result, error) {
 		res.ManifestKeeps = len(mk)
 	}
 
+	// RASP is injected FIRST so the subsequent passes obfuscate it too — its
+	// detection signatures (su paths, "frida", Build strings, Xposed class) get
+	// string-encrypted and its control flow flattened, instead of sitting in
+	// plaintext (committee finding RC3). Its class + public method names stay
+	// stable (Lshield/rt/RASP; is in neverRename) so the host API still resolves.
+	if p.RASP.Enabled {
+		classes = append(classes, RASPClass(base))
+		res.RASPInjected = true
+		res.Applied = append(res.Applied, "rasp")
+	}
+
 	// Plan order (section 2.2): metadata -> strings -> member-rename ->
 	// class-rename -> control-flow -> junk. Member renaming runs before class
 	// renaming so it can reason about original, scoped descriptors.
@@ -110,12 +121,7 @@ func Run(root string, p policy.Policy) (*Result, error) {
 		res.MethodsPadded = passJunk(classes, p.Junk.Nops)
 		res.Applied = append(res.Applied, "junk-code")
 	}
-	// Runtime classes are injected last so they stay pristine (no opaque/junk).
-	if p.RASP.Enabled {
-		classes = append(classes, RASPClass(base))
-		res.RASPInjected = true
-		res.Applied = append(res.Applied, "rasp")
-	}
+	// The VM interpreter is injected last (kept pristine for now).
 	if vmClass != nil {
 		classes = append(classes, vmClass)
 	}
