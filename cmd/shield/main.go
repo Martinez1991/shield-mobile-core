@@ -16,11 +16,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"shield/internal/analyze"
 	"shield/internal/apk"
 	"shield/internal/engine"
+	"shield/internal/obs"
 	"shield/internal/policy"
 )
 
@@ -106,6 +108,8 @@ func cmdObfuscate(args []string) {
 	preset := fs.String("preset", "default", "built-in preset")
 	mappingPath := fs.String("mapping", "", "write rename mapping here (default <out>/mapping.txt)")
 	reportPath := fs.String("report", "", "write JSON evidence report here")
+	verbose := fs.Bool("verbose", false, "debug-level structured logs")
+	logFormat := fs.String("log-format", "text", "structured log format: text|json")
 	src, rest := splitSubject(args)
 	if src == "" {
 		die(20, "obfuscate: missing <smali-dir> (must be the first argument)")
@@ -127,9 +131,23 @@ func cmdObfuscate(args []string) {
 		target = *out
 	}
 
+	log := obs.NewLogger(os.Stderr, *logFormat, *verbose)
+	bid := obs.BuildID(src, pol.Name, strconv.FormatInt(pol.Seed, 10))
+	log.Debug("obfuscation starting", "build_id", bid, "src", src, "policy", pol.Name)
+
 	res, err := engine.Run(target, pol)
 	if err != nil {
+		log.Error("obfuscation failed", "build_id", bid, "err", err.Error())
 		die(10, "obfuscate: %v", err)
+	}
+	log.Info("obfuscation complete",
+		"build_id", bid, "policy", res.Policy, "classes", res.ClassesTotal,
+		"strings_encrypted", res.StringsEncrypted, "classes_renamed", res.ClassesRenamed,
+		"members_renamed", res.MembersRenamed, "manifest_keeps", res.ManifestKeeps,
+		"virtualized", res.MethodsVirtual, "reordered", res.MethodsReordered,
+		"opaque", res.OpaquePredicates, "rasp", res.RASPInjected, "method_refs", res.MethodRefs)
+	if res.MultidexRisk {
+		log.Warn("multidex risk", "build_id", bid, "method_refs", res.MethodRefs)
 	}
 
 	if res.ClassesRenamed > 0 {
@@ -165,6 +183,8 @@ func cmdProtect(args []string) {
 	ks := fs.String("ks", "", "keystore for signing (optional)")
 	ksPassFile := fs.String("ks-pass-file", "", "file containing the keystore password (preferred; else env SHIELD_KS_PASS)")
 	ksAlias := fs.String("ks-alias", "", "key alias")
+	verbose := fs.Bool("verbose", false, "debug-level structured logs")
+	logFormat := fs.String("log-format", "text", "structured log format: text|json")
 	input, rest := splitSubject(args)
 	if input == "" {
 		die(20, "protect: missing <app.apk> (must be the first argument)")
@@ -174,17 +194,23 @@ func cmdProtect(args []string) {
 		die(20, "protect: --out required")
 	}
 	pol := resolvePolicy(*policyPath, *preset)
+	log := obs.NewLogger(os.Stderr, *logFormat, *verbose)
+	bid := obs.BuildID(input, pol.Name, strconv.FormatInt(pol.Seed, 10))
 	// CWE-214: the password is never a CLI flag. Source it from a file or env.
 	res, err := apk.Protect(apk.Options{
 		Input: input, Output: *out, Policy: pol,
 		Keystore: *ks, KsPassFile: *ksPassFile, KsPass: os.Getenv("SHIELD_KS_PASS"), KeyAlias: *ksAlias,
-		Log: func(s string) { fmt.Fprintln(os.Stderr, "•", s) },
+		Log: func(s string) { log.Debug(s, "build_id", bid) },
 	})
 	if err != nil {
+		log.Error("protect failed", "build_id", bid, "err", err.Error())
 		die(10, "protect: %v", err)
 	}
+	log.Info("protect complete", "build_id", bid, "input", input, "output", *out,
+		"strings_encrypted", res.StringsEncrypted, "classes_renamed", res.ClassesRenamed,
+		"rasp", res.RASPInjected, "method_refs", res.MethodRefs)
 	if res.MultidexRisk {
-		fmt.Fprintf(os.Stderr, "warning: ~%d method refs — near the 64K single-DEX limit; ensure multidex is enabled.\n", res.MethodRefs)
+		log.Warn("multidex risk", "build_id", bid, "method_refs", res.MethodRefs)
 	}
 	fmt.Printf("protected %s -> %s (strings-enc=%d renamed=%d)\n",
 		input, *out, res.StringsEncrypted, res.ClassesRenamed)

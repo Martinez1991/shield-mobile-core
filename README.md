@@ -34,6 +34,8 @@ shield analyze examples/smali --json
 # Ofuscar um projeto smali já decodificado
 shield obfuscate examples/smali --out out --policy examples/policy-prod-high.json
 shield obfuscate examples/smali --out out --preset prod-high --report out/report.json
+# Logs estruturados (text|json) correlacionados por build_id:
+shield obfuscate examples/smali --out out --preset prod-high --log-format json --verbose
 
 # Round-trip completo de APK (requer apktool no PATH; apksigner p/ assinar)
 # A senha do keystore NUNCA vai no argv (CWE-214): use --ks-pass-file ou a env SHIELD_KS_PASS.
