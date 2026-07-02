@@ -36,6 +36,23 @@ jobs:
       - name: go test
         run: go test -race -count=1 ./...
 
+  fuzz:
+    name: fuzz (parsers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+      - name: fuzz smali parsers/passes
+        run: |
+          for t in FuzzUnescapeSmali FuzzCompileMethod FuzzReorderMethod FuzzSplitBlocks FuzzEstimateMethodRefs FuzzPassesOnClass; do
+            echo "== $t =="
+            go test ./internal/engine -run '^$' -fuzz "^${t}$" -fuzztime=20s
+          done
+          go test ./internal/manifest -run '^$' -fuzz '^FuzzKeepClasses$' -fuzztime=20s
+
   vuln:
     name: govulncheck (SCA)
     runs-on: ubuntu-latest

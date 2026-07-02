@@ -69,10 +69,37 @@ func seedBytes(seed int64) []byte {
 	return b
 }
 
-// aesKeyMaterial returns the 32 bytes embedded in the decryptor.
+// aesKeyMaterial returns the 32 bytes the key is derived from (key =
+// SHA-256(material)). NOTE: string "encryption" here is *reversible obfuscation*,
+// not confidentiality — the material to reconstruct the key ships inside the
+// artifact. It raises the bar against static extraction; it is not a secret an
+// attacker with the APK cannot recover. Do not label it as confidentiality.
 func aesKeyMaterial(seed int64) []byte {
 	h := sha256.Sum256(append([]byte("shield-aes-km|"), seedBytes(seed)...))
 	return h[:]
+}
+
+// aesMaskedMaterial returns the key material XOR a per-build keystream, so the
+// *raw* material never appears as a single literal block in the DEX (issue #5).
+// The injected decryptor unmasks it at runtime before hashing.
+func aesMaskedMaterial(seed int64) []byte {
+	raw := aesKeyMaterial(seed)
+	s8, step := deriveKey(seed)
+	out := make([]byte, len(raw))
+	for i := range raw {
+		out[i] = raw[i] ^ byte((s8+i*step)&0xFF)
+	}
+	return out
+}
+
+// aesUnmaskMaterial reverses aesMaskedMaterial (used by tests / mirrors smali).
+func aesUnmaskMaterial(masked []byte, seed int64) []byte {
+	s8, step := deriveKey(seed)
+	out := make([]byte, len(masked))
+	for i := range masked {
+		out[i] = masked[i] ^ byte((s8+i*step)&0xFF)
+	}
+	return out
 }
 
 // aesKey derives the actual AES-256 key from the embedded material.

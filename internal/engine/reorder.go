@@ -60,6 +60,9 @@ func reorderMethod(block []string, seed int64, mid *int) ([]string, bool) {
 			break
 		}
 	}
+	if start >= end { // malformed (e.g. .end method before any body): bail safely
+		return block, false
+	}
 	code := block[start:end]
 
 	// Bail on constructs whose correctness depends on layout/ranges.

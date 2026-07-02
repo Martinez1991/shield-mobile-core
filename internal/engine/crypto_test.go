@@ -1,6 +1,35 @@
 package engine
 
-import "testing"
+import (
+	"encoding/hex"
+	"os"
+	"strconv"
+	"testing"
+)
+
+// TestAESDumpVector emits a validation vector (masked material, keystream params,
+// ciphertext, expected plaintext) to SHIELD_AES_VEC so a JVM harness mirroring
+// the injected smali decryptor (unmask -> SHA-256 -> GCM) can validate the full
+// path end-to-end. Skipped unless the env var is set.
+func TestAESDumpVector(t *testing.T) {
+	path := os.Getenv("SHIELD_AES_VEC")
+	if path == "" {
+		t.Skip("set SHIELD_AES_VEC to emit the AES validation vector")
+	}
+	var seed int64 = 0x5117e1d
+	s8, step := deriveKey(seed)
+	pt := "sk_live_9f2a3b4c5d6e7f8a"
+	blob, err := EncodeStringAES(pt, seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := hex.EncodeToString(aesMaskedMaterial(seed)) + "\n" +
+		strconv.Itoa(s8) + " " + strconv.Itoa(step) + "\n" +
+		blob + "\n" + pt + "\n"
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	seed8, step := deriveKey(0x5117e1d)
@@ -68,6 +97,22 @@ func TestAESKeyNeverLiteral(t *testing.T) {
 	}
 	if len(key) != 32 {
 		t.Errorf("AES-256 key must be 32 bytes, got %d", len(key))
+	}
+}
+
+func TestAESMaterialIsMasked(t *testing.T) {
+	seed := int64(0x5117e1d)
+	raw := aesKeyMaterial(seed)
+	masked := aesMaskedMaterial(seed)
+	if string(raw) == string(masked) {
+		t.Fatal("masked material must differ from raw (not a literal key block)")
+	}
+	if string(aesUnmaskMaterial(masked, seed)) != string(raw) {
+		t.Fatal("unmask(mask(raw)) must equal raw")
+	}
+	// The key derivation is unchanged: key = SHA-256(raw material).
+	if len(aesKey(seed)) != 32 {
+		t.Fatal("key must be 32 bytes")
 	}
 }
 

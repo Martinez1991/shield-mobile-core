@@ -92,8 +92,13 @@ bytecode/ciphertext e um port Java do algoritmo injetado reproduz os resultados
 exatos. Reproduza a VM com:
 
 ```bash
-./scripts/validate-vm.sh   # → VM-JVM-VALIDATION OK  (só precisa de javac/java)
+./scripts/validate-vm.sh    # → VM-JVM-VALIDATION OK   (só precisa de javac/java)
+./scripts/validate-aes.sh   # → AES-JVM-VALIDATION OK  (unmask + SHA-256 + GCM)
 ```
+
+O material de chave AES é embutido **mascarado** (XOR keystream por build), nunca
+como bloco literal, e desmascarado em runtime antes de derivar a chave. Os parsers
+smali têm **fuzz tests** (`go test -fuzz`) rodados no CI.
 
 ### Correção semântica (doc §20)
 
