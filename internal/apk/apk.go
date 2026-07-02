@@ -24,11 +24,35 @@ type Options struct {
 
 	// Optional signing (section 2.2 stage 22). If Keystore is empty the artifact
 	// is left unsigned for the caller to sign (e.g. Play App Signing / fastlane).
-	Keystore string
-	KsPass   string
-	KeyAlias string
+	//
+	// The password must be supplied out-of-band (never on the shield CLI argv):
+	// either KsPassFile (a file readable by apksigner) or KsPass (an in-memory
+	// value the caller sourced from an env var / secret store). If both are set,
+	// KsPassFile wins.
+	Keystore   string
+	KsPass     string
+	KsPassFile string
+	KeyAlias   string
 
 	Log func(string)
+}
+
+// ksPassArg builds the apksigner `--ks-pass` argument without exposing the
+// secret on any command line (CWE-214). A caller-provided file is used directly;
+// an in-memory password is written to a 0600 temp file inside the work dir
+// (removed with it).
+func ksPassArg(o Options, work string) (string, error) {
+	if o.KsPassFile != "" {
+		return "file:" + o.KsPassFile, nil
+	}
+	if o.KsPass == "" {
+		return "", fmt.Errorf("keystore set but no password provided (use --ks-pass-file or SHIELD_KS_PASS)")
+	}
+	f := filepath.Join(work, ".kspass")
+	if err := os.WriteFile(f, []byte(o.KsPass), 0o600); err != nil {
+		return "", err
+	}
+	return "file:" + f, nil
 }
 
 // ToolAvailable reports whether a CLI tool is on PATH.
@@ -87,9 +111,16 @@ func Protect(o Options) (*engine.Result, error) {
 		if !ToolAvailable("apksigner") {
 			return nil, fmt.Errorf("keystore given but apksigner not on PATH")
 		}
+		// CWE-214: never pass the keystore password on the command line. Write it
+		// to a 0600 temp file inside the (soon-deleted) work dir and hand apksigner
+		// a `file:` reference so it is not visible in the process listing.
+		passArg, err := ksPassArg(o, work)
+		if err != nil {
+			return nil, err
+		}
 		o.logf("signing with %s", o.Keystore)
 		if err := run("apksigner", "sign",
-			"--ks", o.Keystore, "--ks-pass", "pass:"+o.KsPass,
+			"--ks", o.Keystore, "--ks-pass", passArg,
 			"--ks-key-alias", o.KeyAlias, built); err != nil {
 			return nil, fmt.Errorf("apksigner failed: %w", err)
 		}

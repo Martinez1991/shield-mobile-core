@@ -36,8 +36,10 @@ shield obfuscate examples/smali --out out --policy examples/policy-prod-high.jso
 shield obfuscate examples/smali --out out --preset prod-high --report out/report.json
 
 # Round-trip completo de APK (requer apktool no PATH; apksigner p/ assinar)
-shield protect app.apk --out app-protegido.apk --preset prod-high \
-  --ks release.jks --ks-pass senha --ks-alias chave
+# A senha do keystore NUNCA vai no argv (CWE-214): use --ks-pass-file ou a env SHIELD_KS_PASS.
+SHIELD_KS_PASS=senha shield protect app.apk --out app-protegido.apk --preset prod-high \
+  --ks release.jks --ks-alias chave
+# ou: shield protect app.apk --out out.apk --ks release.jks --ks-alias chave --ks-pass-file pass.txt
 
 # Policy-as-code
 shield policy show prod-high
@@ -54,7 +56,7 @@ Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` 
 | §3.3 | **String Encryption** | ✅ | XOR (low-risk) **ou AES-256-GCM** com chave derivada em runtime (`key=SHA-256(material)`, nunca literal); decryptor `Lshield/rt/SH;` injetado. |
 | §6 | **RASP (runtime)** | ✅ básico | Injeta `Lshield/rt/RASP;`: detecção de root/debugger/emulador + `flags()` bitmask (modelo detecção→flag→reação diferida §6.1). |
 | §8 | **Code Virtualization (VM)** | ✅ cirúrgico | Compila métodos `static` de aritmética inteira para **bytecode próprio** interpretado por `Lshield/rt/VM;` (fetch/decode/dispatch), com **opcodes embaralhados por build** (polimorfismo §8.1). |
-| §3.1 | **Class/Type Renaming** | ✅ | Renomeia classes/tipos *reachability-aware* (keep rules), reescreve todas as referências, gera `mapping.txt`. |
+| §3.1 | **Class/Type Renaming** | ✅ | Renomeia classes/tipos *reachability-aware*; **keep-rules automáticas do AndroidManifest.xml** (Activities/Services/Providers/Receivers nunca renomeados), reescreve referências, gera `mapping.txt`. |
 | §3.1 | **Member Renaming** | ✅ | Renomeia métodos `private`/`static` e campos `private` (nunca vtable/overrides); enums e classes kept preservados. |
 | §3.2 | **Opaque predicates** | ✅ | Predicados always-true + fake branches, *verifier-safe* (reusa registrador local livre no entry, sem realocação). |
 | §7 | **Block Reordering** | ✅ | Embaralha basic blocks e reconecta com `goto` (*flattening* de layout, seguro por construção: ordem de execução e tipos preservados). Dispatcher central + ISA polimórfica → roadmap. |

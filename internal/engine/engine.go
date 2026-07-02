@@ -6,10 +6,15 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 
+	"shield/internal/manifest"
 	"shield/internal/policy"
 	"shield/internal/smali"
 )
+
+// dexMethodRefLimit is the Dalvik per-DEX method reference cap (64K).
+const dexMethodRefLimit = 65536
 
 // Result is the build evidence (section 2.2 stage 23: what was applied, where).
 type Result struct {
@@ -25,6 +30,9 @@ type Result struct {
 	OpaquePredicates int        `json:"opaquePredicates"`
 	MethodsPadded    int        `json:"methodsPadded"`
 	RASPInjected     bool       `json:"raspInjected"`
+	ManifestKeeps    int        `json:"manifestKeeps"`
+	MethodRefs       int        `json:"methodRefsEstimate"`
+	MultidexRisk     bool       `json:"multidexRisk"`
 	Applied          []string   `json:"appliedTechniques"`
 	Mapping          []MapEntry `json:"-"`
 }
@@ -40,6 +48,15 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	base := root
 	if len(classes) > 0 {
 		base = classes[0].Base
+	}
+
+	// Reachability-aware keep-rules: policy keeps + components declared in the
+	// AndroidManifest (never rename framework entry points). Missing manifest is
+	// not an error (e.g. a raw smali dir).
+	keep := append([]string(nil), p.Rename.KeepClasses...)
+	if mk, err := manifest.KeepClasses(filepath.Join(root, "AndroidManifest.xml")); err == nil {
+		keep = append(keep, mk...)
+		res.ManifestKeeps = len(mk)
 	}
 
 	// Plan order (section 2.2): metadata -> strings -> member-rename ->
@@ -61,7 +78,7 @@ func Run(root string, p policy.Policy) (*Result, error) {
 		res.Applied = append(res.Applied, "string-encryption("+algo+")")
 	}
 	if p.Rename.Enabled && p.Rename.Members {
-		res.MembersRenamed = passRenameMembers(classes, p.Rename.IncludePrefixes, p.Rename.KeepClasses)
+		res.MembersRenamed = passRenameMembers(classes, p.Rename.IncludePrefixes, keep)
 		res.Applied = append(res.Applied, "member-renaming")
 	}
 	// Code virtualization runs before class renaming (needs original scoped
@@ -76,7 +93,7 @@ func Run(root string, p policy.Policy) (*Result, error) {
 		}
 	}
 	if p.Rename.Enabled {
-		renameMap := passRename(classes, p.Rename.IncludePrefixes, p.Rename.KeepClasses)
+		renameMap := passRename(classes, p.Rename.IncludePrefixes, keep)
 		res.ClassesRenamed = len(renameMap)
 		res.Mapping = mappingFrom(renameMap)
 		res.Applied = append(res.Applied, "identifier-renaming")
@@ -103,10 +120,36 @@ func Run(root string, p policy.Policy) (*Result, error) {
 		classes = append(classes, vmClass)
 	}
 
+	// Multidex guard (Dalvik 64K method-reference limit). Injected runtime
+	// classes and added references can push a single-DEX app over the cap.
+	res.MethodRefs = estimateMethodRefs(classes)
+	res.MultidexRisk = res.MethodRefs > dexMethodRefLimit*95/100
+
 	if err := persist(classes); err != nil {
 		return nil, err
 	}
 	return res, nil
+}
+
+var invokeRefRE = regexp.MustCompile(`L[\w$/]+;->[\w$<>]+\([^)]*\)\[*[\w$/;]+`)
+
+// estimateMethodRefs approximates the number of distinct method references in
+// the resulting DEX (defined methods + invoke targets). It is an estimate, not
+// an exact DEX method_ids count, but a good early-warning for multidex.
+func estimateMethodRefs(classes []*smali.Class) int {
+	set := make(map[string]struct{})
+	for _, c := range classes {
+		for _, ln := range c.Lines {
+			if m := methodDeclRE.FindStringSubmatch(ln); m != nil {
+				set[c.Descriptor+"->"+m[3]+m[4]] = struct{}{}
+				continue
+			}
+			for _, ref := range invokeRefRE.FindAllString(ln, -1) {
+				set[ref] = struct{}{}
+			}
+		}
+	}
+	return len(set)
 }
 
 // persist writes every class to its (possibly renamed) path and removes files

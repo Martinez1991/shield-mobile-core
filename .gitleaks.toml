@@ -1,0 +1,22 @@
+# Gitleaks config for SHIELD.
+# We ship intentional FAKE secrets as test fixtures (to exercise the analyze
+# detector and string-encryption). Allowlist them so the secret scan stays
+# meaningful for real code without flagging fixtures.
+title = "SHIELD gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures with intentional fake secrets"
+paths = [
+  '''.*_test\.go$''',
+  '''internal/engine/.*_test\.go$''',
+  '''internal/analyze/.*_test\.go$''',
+  '''examples/.*''',
+  '''docs/.*''',
+]
+regexes = [
+  # Fake Stripe-style key used across tests/examples.
+  '''sk_live_9f2a3b4c5d6e[0-9a-f]*''',
+]
