@@ -112,15 +112,32 @@ func xorDecryptorSrc(seed8, step int) string {
 `, seed8, step, step, seed8)
 }
 
-// aesDecryptorSrc emits the AES-256-GCM decryptor. The AES key is never a literal:
-// 32 bytes of key material are embedded and the key is SHA-256(material) at
-// runtime. Blob layout is nonce(12) ‖ ciphertext ‖ tag(16). This exact smali was
-// validated to assemble to a valid DEX and to interop with the JVM crypto stack.
+// aesDecryptorSrc emits the AES-256-GCM decryptor. The AES key never appears as
+// a literal: 32 bytes of *masked* key material are embedded, unmasked at runtime
+// with a per-build XOR keystream, then hashed (key = SHA-256(material)). Blob
+// layout is nonce(12) ‖ ciphertext ‖ tag(16). Validated to assemble to a valid
+// DEX and to interop with the JVM crypto stack (scripts/validate-aes.sh).
 func aesDecryptorSrc(seed int64) string {
+	s8, step := deriveKey(seed)
 	var arr strings.Builder
-	for _, b := range aesKeyMaterial(seed) {
+	for _, b := range aesMaskedMaterial(seed) {
 		fmt.Fprintf(&arr, "        0x%02xt\n", b)
 	}
+	unmask := fmt.Sprintf(`    array-length v2, v6
+    const/4 v0, 0x0
+    :umloop
+    if-ge v0, v2, :umdone
+    aget-byte v1, v6, v0
+    mul-int/lit8 v3, v0, %d
+    add-int/lit16 v3, v3, %d
+    and-int/lit16 v3, v3, 0xff
+    xor-int/2addr v1, v3
+    int-to-byte v1, v1
+    aput-byte v1, v6, v0
+    add-int/lit8 v0, v0, 0x1
+    goto :umloop
+    :umdone
+`, step, s8)
 	return `.class public Lshield/rt/SH;
 .super Ljava/lang/Object;
 
@@ -141,7 +158,7 @@ func aesDecryptorSrc(seed int64) string {
     const/16 v6, 0x20
     new-array v6, v6, [B
     fill-array-data v6, :km
-    const-string v7, "SHA-256"
+` + unmask + `    const-string v7, "SHA-256"
     invoke-static {v7}, Ljava/security/MessageDigest;->getInstance(Ljava/lang/String;)Ljava/security/MessageDigest;
     move-result-object v7
     invoke-virtual {v7, v6}, Ljava/security/MessageDigest;->digest([B)[B

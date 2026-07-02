@@ -310,6 +310,9 @@ func methodBody(block []string) []string {
 			break
 		}
 	}
+	if start >= end { // malformed input: no valid body range
+		return nil
+	}
 	return block[start:end]
 }
 
