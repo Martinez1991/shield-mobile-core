@@ -1,0 +1,33 @@
+{
+  "name": "prod-high",
+  "version": 1,
+  "rename": {
+    "enabled": true,
+    "includePrefixes": ["com/bank"],
+    "keepClasses": ["com.bank.pay.CardValidator"],
+    "members": true
+  },
+  "controlFlow": {
+    "enabled": true,
+    "reorder": true
+  },
+  "vm": {
+    "enabled": true
+  },
+  "strings": {
+    "enabled": true,
+    "minLength": 2,
+    "algorithm": "aes"
+  },
+  "metadata": {
+    "enabled": true
+  },
+  "rasp": {
+    "enabled": true
+  },
+  "junk": {
+    "enabled": true,
+    "nops": 4
+  },
+  "seed": 85160989
+}
