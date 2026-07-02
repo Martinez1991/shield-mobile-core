@@ -1,0 +1,209 @@
+openapi: 3.1.0
+info:
+  title: SHIELD Platform API
+  version: "1.0.0"
+  description: >
+    API de Mobile Application Shielding (RASP + Obfuscation + Anti-Tamper).
+    Erros seguem RFC 9457 (application/problem+json).
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.shield.dev/v1
+    description: Produção
+  - url: https://api.staging.shield.dev/v1
+    description: Staging
+security:
+  - bearerAuth: []
+  - apiKey: []
+tags:
+  - name: Builds
+  - name: Policies
+  - name: Licenses
+paths:
+  /apps/{appId}/builds:
+    post:
+      tags: [Builds]
+      summary: Inicia um build de proteção
+      operationId: createBuild
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBuildInput' }
+      responses:
+        '202':
+          description: Aceito
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuildAccepted' }
+        '402': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /builds/{buildId}:
+    get:
+      tags: [Builds]
+      summary: Status de um build
+      operationId: getBuild
+      parameters: [ { $ref: '#/components/parameters/BuildId' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Build' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /builds/{buildId}/artifact:
+    get:
+      tags: [Builds]
+      summary: URL pré-assinada do artefato protegido
+      operationId: getArtifact
+      parameters: [ { $ref: '#/components/parameters/BuildId' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+  /builds/{buildId}/sign:
+    post:
+      tags: [Builds]
+      summary: Dispara assinatura via Signer Broker (HSM/KMS)
+      operationId: signBuild
+      parameters:
+        - $ref: '#/components/parameters/BuildId'
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keyRef: { type: string, example: "hsm://prod" }
+      responses:
+        '202': { description: Assinatura enfileirada }
+        '403': { $ref: '#/components/responses/Problem' }
+  /policies:
+    get:
+      tags: [Policies]
+      summary: Lista policies
+      operationId: listPolicies
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Policy' }
+    post:
+      tags: [Policies]
+      summary: Cria/atualiza policy (policy-as-code)
+      operationId: upsertPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicyInput' }
+      responses:
+        '201':
+          description: Criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Policy' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /licenses:
+    get:
+      tags: [Licenses]
+      summary: Entitlements e quotas
+      operationId: getLicenses
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/License' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    apiKey: { type: apiKey, in: header, name: X-API-Key }
+  parameters:
+    AppId:
+      name: appId
+      in: path
+      required: true
+      schema: { type: string }
+    BuildId:
+      name: buildId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Problem:
+      description: Erro (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    CreateBuildInput:
+      type: object
+      required: [policyId, artifactUploadId, platform]
+      properties:
+        policyId: { type: string }
+        artifactUploadId: { type: string }
+        platform: { type: string, enum: [android, ios] }
+    BuildAccepted:
+      type: object
+      properties:
+        buildId: { type: string }
+        status: { type: string }
+        statusUrl: { type: string }
+    Build:
+      type: object
+      properties:
+        id: { type: string }
+        status:
+          type: string
+          enum: [QUEUED, ANALYZING, PLANNING, PROTECTING, REPACKAGING, SIGNING, READY, FAILED]
+        appId: { type: string }
+        policyId: { type: string }
+        metrics: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    Policy:
+      type: object
+      properties:
+        id: { type: string }
+        version: { type: integer }
+        spec: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    PolicyInput:
+      type: object
+      required: [spec]
+      properties:
+        spec: { type: object, additionalProperties: true }
+    License:
+      type: object
+      properties:
+        plan: { type: string }
+        entitlements: { type: object, additionalProperties: true }
+        validUntil: { type: string, format: date-time }
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
