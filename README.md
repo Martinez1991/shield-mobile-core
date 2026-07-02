@@ -100,6 +100,21 @@ O material de chave AES é embutido **mascarado** (XOR keystream por build), nun
 como bloco literal, e desmascarado em runtime antes de derivar a chave. Os parsers
 smali têm **fuzz tests** (`go test -fuzz`) rodados no CI.
 
+### Red-team (KPI de reversão)
+
+`scripts/redteam.sh` decompila o DEX baseline vs protegido com o **jadx** (decompilador
+real) e mede reversibilidade — com um **gate rígido**: se um segredo conhecido sobreviver
+na saída protegida, sai com erro (regressão de bypass).
+
+```bash
+SMALI_JAR=~/tools/smali-2.5.2.jar JADX_CMD=~/tools/jadx/bin/jadx ./scripts/redteam.sh
+# → GATE OK: no known secret leaked into the protected output.
+```
+
+Exemplo de saída (fixture): segredo no baseline = 1 arquivo, no protegido = 0; LOC
+decompilado 31 → 245 (ruído de proteção); chamadas `SH.d`/`VM.run` presentes. jadx:
+<https://github.com/skylot/jadx>.
+
 ### Correção semântica (doc §20)
 
 As transformações preservam a semântica por construção:
