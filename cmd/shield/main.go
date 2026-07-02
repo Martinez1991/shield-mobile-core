@@ -146,9 +146,12 @@ func cmdObfuscate(args []string) {
 			die(10, "report: %v", err)
 		}
 	}
-	fmt.Printf("policy=%s  classes=%d  metadata-=%d  strings-enc=%d  classes-renamed=%d  members-renamed=%d  virtualized=%d  reordered=%d  opaque=%d  padded=%d  rasp=%t\n",
+	fmt.Printf("policy=%s  classes=%d  metadata-=%d  strings-enc=%d  classes-renamed=%d  members-renamed=%d  manifest-keeps=%d  virtualized=%d  reordered=%d  opaque=%d  padded=%d  rasp=%t  method-refs~%d\n",
 		res.Policy, res.ClassesTotal, res.MetadataRemoved, res.StringsEncrypted,
-		res.ClassesRenamed, res.MembersRenamed, res.MethodsVirtual, res.MethodsReordered, res.OpaquePredicates, res.MethodsPadded, res.RASPInjected)
+		res.ClassesRenamed, res.MembersRenamed, res.ManifestKeeps, res.MethodsVirtual, res.MethodsReordered, res.OpaquePredicates, res.MethodsPadded, res.RASPInjected, res.MethodRefs)
+	if res.MultidexRisk {
+		fmt.Fprintf(os.Stderr, "warning: ~%d method refs — near the 64K single-DEX limit; ensure multidex is enabled.\n", res.MethodRefs)
+	}
 	fmt.Printf("applied: %v\n", res.Applied)
 }
 
@@ -160,7 +163,7 @@ func cmdProtect(args []string) {
 	policyPath := fs.String("policy", "", "policy JSON file")
 	preset := fs.String("preset", "prod-high", "built-in preset")
 	ks := fs.String("ks", "", "keystore for signing (optional)")
-	ksPass := fs.String("ks-pass", "", "keystore password")
+	ksPassFile := fs.String("ks-pass-file", "", "file containing the keystore password (preferred; else env SHIELD_KS_PASS)")
 	ksAlias := fs.String("ks-alias", "", "key alias")
 	input, rest := splitSubject(args)
 	if input == "" {
@@ -171,13 +174,17 @@ func cmdProtect(args []string) {
 		die(20, "protect: --out required")
 	}
 	pol := resolvePolicy(*policyPath, *preset)
+	// CWE-214: the password is never a CLI flag. Source it from a file or env.
 	res, err := apk.Protect(apk.Options{
 		Input: input, Output: *out, Policy: pol,
-		Keystore: *ks, KsPass: *ksPass, KeyAlias: *ksAlias,
+		Keystore: *ks, KsPassFile: *ksPassFile, KsPass: os.Getenv("SHIELD_KS_PASS"), KeyAlias: *ksAlias,
 		Log: func(s string) { fmt.Fprintln(os.Stderr, "•", s) },
 	})
 	if err != nil {
 		die(10, "protect: %v", err)
+	}
+	if res.MultidexRisk {
+		fmt.Fprintf(os.Stderr, "warning: ~%d method refs — near the 64K single-DEX limit; ensure multidex is enabled.\n", res.MethodRefs)
 	}
 	fmt.Printf("protected %s -> %s (strings-enc=%d renamed=%d)\n",
 		input, *out, res.StringsEncrypted, res.ClassesRenamed)

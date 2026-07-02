@@ -217,6 +217,62 @@ func TestRunVirtualizes(t *testing.T) {
 	}
 }
 
+func TestManifestKeepRulesPreventRename(t *testing.T) {
+	root := t.TempDir()
+	// Decoded-project layout: AndroidManifest.xml at root + smali/ tree.
+	must(t, filepath.Join(root, "AndroidManifest.xml"), `<?xml version="1.0"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.bank.app">
+  <application android:name=".App">
+    <activity android:name=".MainActivity"/>
+  </application>
+</manifest>`)
+	dir := filepath.Join(root, "smali", "com", "bank", "app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	must(t, filepath.Join(dir, "MainActivity.smali"),
+		".class public Lcom/bank/app/MainActivity;\n.super Landroid/app/Activity;\n")
+	must(t, filepath.Join(dir, "Helper.smali"),
+		".class public Lcom/bank/app/Helper;\n.super Ljava/lang/Object;\n")
+
+	p := policy.Default()
+	p.Rename.Enabled = true
+	p.Rename.IncludePrefixes = []string{"com/bank"}
+	p.Strings.Enabled = false
+	res, err := Run(root, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ManifestKeeps != 2 { // App + MainActivity
+		t.Errorf("ManifestKeeps = %d, want 2", res.ManifestKeeps)
+	}
+	// MainActivity is a manifest component -> must NOT be renamed (file stays).
+	if _, err := os.Stat(filepath.Join(dir, "MainActivity.smali")); err != nil {
+		t.Error("MainActivity was renamed despite being a manifest component")
+	}
+	// Helper is not in the manifest -> should be renamed away.
+	if _, err := os.Stat(filepath.Join(dir, "Helper.smali")); err == nil {
+		t.Error("Helper should have been renamed")
+	}
+	if res.ClassesRenamed != 1 {
+		t.Errorf("ClassesRenamed = %d, want 1 (only Helper)", res.ClassesRenamed)
+	}
+}
+
+func TestEstimateMethodRefs(t *testing.T) {
+	root := writeProject(t)
+	res, err := Run(root, testPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MethodRefs <= 0 {
+		t.Error("expected a positive method-ref estimate")
+	}
+	if res.MultidexRisk {
+		t.Error("tiny fixture should not trip the multidex guard")
+	}
+}
+
 func TestRunIsDeterministic(t *testing.T) {
 	r1, r2 := writeProject(t), writeProject(t)
 	if _, err := Run(r1, testPolicy()); err != nil {
