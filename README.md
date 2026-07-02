@@ -54,7 +54,7 @@ Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` 
 |-----|---------|--------|-------|
 | §3.5 | **Metadata Removal** | ✅ | Remove `.line`, `.local`, `.prologue`, `.source` (debug info). |
 | §3.3 | **String Encryption** | ✅ | XOR (low-risk) **ou AES-256-GCM** com chave derivada em runtime (`key=SHA-256(material)`, nunca literal); decryptor `Lshield/rt/SH;` injetado. |
-| §6 | **RASP (runtime)** | ✅ básico | Injeta `Lshield/rt/RASP;`: detecção de root/debugger/emulador + `flags()` bitmask (modelo detecção→flag→reação diferida §6.1). |
+| §6 | **RASP (runtime)** | ✅ | Injeta `Lshield/rt/RASP;`: detecção de root/debugger/emulador/**Xposed**/**Frida** + `flags()` bitmask + primitiva `react()` (§6.1). **Auto-ofuscado**: injetado antes dos passes, então suas assinaturas (`su`, `frida`, Build) são cifradas e o control-flow embaralhado (API pública estável). |
 | §8 | **Code Virtualization (VM)** | ✅ cirúrgico | Compila métodos `static` de aritmética inteira para **bytecode próprio** interpretado por `Lshield/rt/VM;` (fetch/decode/dispatch), com **opcodes embaralhados por build** (polimorfismo §8.1). |
 | §3.1 | **Class/Type Renaming** | ✅ | Renomeia classes/tipos *reachability-aware*; **keep-rules automáticas do AndroidManifest.xml** (Activities/Services/Providers/Receivers nunca renomeados), reescreve referências, gera `mapping.txt`. |
 | §3.1 | **Member Renaming** | ✅ | Renomeia métodos `private`/`static` e campos `private` (nunca vtable/overrides); enums e classes kept preservados. |
