@@ -46,6 +46,9 @@ SHIELD_KS_PASS=senha shield protect app.apk --out app-protegido.apk --preset pro
 # Policy-as-code
 shield policy show prod-high
 shield policy validate examples/policy-prod-high.json
+
+# Retrace de stack trace ofuscado (usa o mapping.txt de renames de classe)
+shield retrace out/mapping.txt crash.txt   # ou: cat crash.txt | shield retrace out/mapping.txt
 ```
 
 Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` falha de policy.

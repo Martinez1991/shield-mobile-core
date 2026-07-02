@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 	"shield/internal/engine"
 	"shield/internal/obs"
 	"shield/internal/policy"
+	"shield/internal/retrace"
 )
 
 const version = "0.1.0"
@@ -42,6 +44,8 @@ func main() {
 		cmdProtect(os.Args[2:])
 	case "policy":
 		cmdPolicy(os.Args[2:])
+	case "retrace":
+		cmdRetrace(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("shield", version)
 	case "help", "-h", "--help":
@@ -63,6 +67,7 @@ Usage:
   shield protect   <app.apk> --out <apk> [--policy p.json | --preset name]
                    [--ks keystore --ks-pass p --ks-alias a]
   shield policy    show <preset> | validate <policy.json>
+  shield retrace   <mapping.txt> [trace-file]   (trace on stdin if omitted)
   shield version
 
 Presets: prod-high, balanced, minimal, default
@@ -214,6 +219,40 @@ func cmdProtect(args []string) {
 	}
 	fmt.Printf("protected %s -> %s (strings-enc=%d renamed=%d)\n",
 		input, *out, res.StringsEncrypted, res.ClassesRenamed)
+}
+
+// ---- retrace ------------------------------------------------------------
+
+func cmdRetrace(args []string) {
+	fs := flag.NewFlagSet("retrace", flag.ExitOnError)
+	mappingPath := fs.String("mapping", "", "mapping file (default: first positional)")
+	subject, rest := splitSubject(args)
+	_ = fs.Parse(rest)
+	mp := *mappingPath
+	if mp == "" {
+		mp = subject
+	}
+	if mp == "" {
+		die(20, "retrace: usage: shield retrace <mapping.txt> [trace-file]  (trace on stdin if omitted)")
+	}
+	mf, err := os.Open(mp)
+	if err != nil {
+		die(20, "retrace: %v", err)
+	}
+	defer mf.Close()
+	rev := retrace.ParseMapping(mf)
+
+	var in []byte
+	if fs.NArg() >= 1 {
+		if in, err = os.ReadFile(fs.Arg(0)); err != nil {
+			die(20, "retrace: %v", err)
+		}
+	} else {
+		if in, err = io.ReadAll(os.Stdin); err != nil {
+			die(10, "retrace: %v", err)
+		}
+	}
+	fmt.Print(retrace.Apply(rev, string(in)))
 }
 
 // ---- policy -------------------------------------------------------------
