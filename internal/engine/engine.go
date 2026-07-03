@@ -7,11 +7,19 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"shield/internal/manifest"
 	"shield/internal/policy"
 	"shield/internal/smali"
 )
+
+// Stage records how long one protection pass took (observability, issue #21).
+// Callers turn these into per-stage latency metrics and spans.
+type Stage struct {
+	Name       string `json:"name"`
+	DurationNS int64  `json:"durationNs"`
+}
 
 // dexMethodRefLimit is the Dalvik per-DEX method reference cap (64K).
 const dexMethodRefLimit = 65536
@@ -40,6 +48,7 @@ type Result struct {
 	MethodRefs       int        `json:"methodRefsEstimate"`
 	MultidexRisk     bool       `json:"multidexRisk"`
 	Applied          []string   `json:"appliedTechniques"`
+	Stages           []Stage    `json:"stages,omitempty"`
 	Mapping          []MapEntry `json:"-"`
 }
 
@@ -54,6 +63,14 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	base := root
 	if len(classes) > 0 {
 		base = classes[0].Base
+	}
+
+	// stage times one protection pass into res.Stages (issue #21). The timing is
+	// wall-clock and so absent from the deterministic on-disk output.
+	stage := func(name string, fn func()) {
+		start := time.Now()
+		fn()
+		res.Stages = append(res.Stages, Stage{Name: name, DurationNS: time.Since(start).Nanoseconds()})
 	}
 
 	// Reachability-aware keep-rules: policy keeps + components declared in the
@@ -80,8 +97,10 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	// class-rename -> control-flow -> junk. Member renaming runs before class
 	// renaming so it can reason about original, scoped descriptors.
 	if p.Metadata.Enabled {
-		res.MetadataRemoved = passMetadata(classes)
-		res.Applied = append(res.Applied, "metadata-removal")
+		stage("metadata", func() {
+			res.MetadataRemoved = passMetadata(classes)
+			res.Applied = append(res.Applied, "metadata-removal")
+		})
 	}
 	// Code virtualization runs before string encryption so it can lift a
 	// plaintext const-string into the VM's string pool (otherwise encryption
@@ -92,55 +111,71 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	// is injected last, pristine.
 	var vmClass *smali.Class
 	if p.VM.Enabled {
-		n, vc := passVirtualize(classes, p.Rename.IncludePrefixes, p.Seed, base)
-		res.MethodsVirtual = n
-		vmClass = vc
-		if n > 0 {
-			res.Applied = append(res.Applied, "code-virtualization")
-		}
+		stage("virtualize", func() {
+			n, vc := passVirtualize(classes, p.Rename.IncludePrefixes, p.Seed, base)
+			res.MethodsVirtual = n
+			vmClass = vc
+			if n > 0 {
+				res.Applied = append(res.Applied, "code-virtualization")
+			}
+		})
 	}
 	// Control-flow flattening runs after virtualization (VM claims its methods
 	// first; flatten skips the wrappers) and before string encryption/renaming.
 	// A flattened method contains a packed-switch, which reorder bails on, so the
 	// control-flow passes stay disjoint.
 	if p.ControlFlow.Flatten {
-		res.MethodsFlattened = passFlatten(classes, p.Rename.IncludePrefixes, p.Seed)
-		if res.MethodsFlattened > 0 {
-			res.Applied = append(res.Applied, "control-flow-flattening")
-		}
+		stage("flatten", func() {
+			res.MethodsFlattened = passFlatten(classes, p.Rename.IncludePrefixes, p.Seed)
+			if res.MethodsFlattened > 0 {
+				res.Applied = append(res.Applied, "control-flow-flattening")
+			}
+		})
 	}
 	if p.Strings.Enabled {
-		algo := p.Strings.Algorithm
-		if algo == "" {
-			algo = "xor"
-		}
-		res.StringsEncrypted = passStrings(classes, p.Strings.MinLength, algo, p.Seed)
-		if res.StringsEncrypted > 0 {
-			classes = append(classes, DecryptorClass(base, algo, p.Seed))
-		}
-		res.Applied = append(res.Applied, "string-encryption("+algo+")")
+		stage("strings", func() {
+			algo := p.Strings.Algorithm
+			if algo == "" {
+				algo = "xor"
+			}
+			res.StringsEncrypted = passStrings(classes, p.Strings.MinLength, algo, p.Seed)
+			if res.StringsEncrypted > 0 {
+				classes = append(classes, DecryptorClass(base, algo, p.Seed))
+			}
+			res.Applied = append(res.Applied, "string-encryption("+algo+")")
+		})
 	}
 	if p.Rename.Enabled && p.Rename.Members {
-		res.MembersRenamed = passRenameMembers(classes, p.Rename.IncludePrefixes, keep)
-		res.Applied = append(res.Applied, "member-renaming")
+		stage("rename-members", func() {
+			res.MembersRenamed = passRenameMembers(classes, p.Rename.IncludePrefixes, keep)
+			res.Applied = append(res.Applied, "member-renaming")
+		})
 	}
 	if p.Rename.Enabled {
-		renameMap := passRename(classes, p.Rename.IncludePrefixes, keep)
-		res.ClassesRenamed = len(renameMap)
-		res.Mapping = mappingFrom(renameMap)
-		res.Applied = append(res.Applied, "identifier-renaming")
+		stage("rename-classes", func() {
+			renameMap := passRename(classes, p.Rename.IncludePrefixes, keep)
+			res.ClassesRenamed = len(renameMap)
+			res.Mapping = mappingFrom(renameMap)
+			res.Applied = append(res.Applied, "identifier-renaming")
+		})
 	}
 	if p.ControlFlow.Reorder {
-		res.MethodsReordered = passReorder(classes, p.Seed)
-		res.Applied = append(res.Applied, "block-reordering")
+		stage("reorder", func() {
+			res.MethodsReordered = passReorder(classes, p.Seed)
+			res.Applied = append(res.Applied, "block-reordering")
+		})
 	}
 	if p.ControlFlow.Enabled {
-		res.OpaquePredicates = passControlFlow(classes, p.Seed)
-		res.Applied = append(res.Applied, "opaque-predicates")
+		stage("opaque-predicates", func() {
+			res.OpaquePredicates = passControlFlow(classes, p.Seed)
+			res.Applied = append(res.Applied, "opaque-predicates")
+		})
 	}
 	if p.Junk.Enabled {
-		res.MethodsPadded = passJunk(classes, p.Junk.Nops)
-		res.Applied = append(res.Applied, "junk-code")
+		stage("junk", func() {
+			res.MethodsPadded = passJunk(classes, p.Junk.Nops)
+			res.Applied = append(res.Applied, "junk-code")
+		})
 	}
 	// The VM interpreter is injected last (kept pristine for now).
 	if vmClass != nil {
