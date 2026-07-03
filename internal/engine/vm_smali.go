@@ -72,6 +72,19 @@ func VMClass(base string, wire []byte) *smali.Class {
 	p("    return v0")
 	p(".end method")
 	p("")
+	// i2: read a big-endian unsigned int16 (jump target) from bc at offset.
+	p(".method public static i2([BI)I")
+	p("    .locals 3")
+	p("    aget-byte v0, p0, p1")
+	p("    and-int/lit16 v0, v0, 0xff")
+	p("    shl-int/lit8 v0, v0, 0x8")
+	p("    add-int/lit8 v1, p1, 0x1")
+	p("    aget-byte v2, p0, v1")
+	p("    and-int/lit16 v2, v2, 0xff")
+	p("    or-int/2addr v0, v2")
+	p("    return v0")
+	p(".end method")
+	p("")
 	// run: the fetch/decode/dispatch loop.
 	p(".method public static run([B[I)I")
 	p("    .locals 10")
@@ -169,6 +182,69 @@ func VMClass(base string, wire []byte) *smali.Class {
 	}
 	litop(opAddLit, "add-int")
 	litop(opMulLit, "mul-int")
+
+	// GOTO target: pc <- target (opcode already consumed; v3 points at target)
+	{
+		l := label()
+		p("    const/16 v5, 0x%x", w(opGoto))
+		p("    if-ne v4, v5, %s", l)
+		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i2([BI)I")
+		p("    move-result v3")
+		p("    goto :loop")
+		p("    %s", l)
+	}
+
+	// IFCMP a, b, target: branch if r[a] <cmp> r[b]
+	ifcmp := func(op int, instr string) {
+		l := label()
+		p("    const/16 v5, 0x%x", w(op))
+		p("    if-ne v4, v5, %s", l)
+		readByte("v6") // a
+		readByte("v7") // b
+		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i2([BI)I")
+		p("    move-result v8") // target
+		p("    add-int/lit8 v3, v3, 0x2")
+		p("    aget v9, v2, v6")
+		p("    aget v5, v2, v7")
+		br := label()
+		p("    %s v9, v5, %s", instr, br)
+		p("    goto :loop")
+		p("    %s", br)
+		p("    move v3, v8")
+		p("    goto :loop")
+		p("    %s", l)
+	}
+	ifcmp(opIfEq, "if-eq")
+	ifcmp(opIfNe, "if-ne")
+	ifcmp(opIfLt, "if-lt")
+	ifcmp(opIfGe, "if-ge")
+	ifcmp(opIfGt, "if-gt")
+	ifcmp(opIfLe, "if-le")
+
+	// IFZ a, target: branch if r[a] <cmp> 0
+	ifz := func(op int, instr string) {
+		l := label()
+		p("    const/16 v5, 0x%x", w(op))
+		p("    if-ne v4, v5, %s", l)
+		readByte("v6") // a
+		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i2([BI)I")
+		p("    move-result v8") // target
+		p("    add-int/lit8 v3, v3, 0x2")
+		p("    aget v9, v2, v6")
+		br := label()
+		p("    %s v9, %s", instr, br)
+		p("    goto :loop")
+		p("    %s", br)
+		p("    move v3, v8")
+		p("    goto :loop")
+		p("    %s", l)
+	}
+	ifz(opIfEqz, "if-eqz")
+	ifz(opIfNez, "if-nez")
+	ifz(opIfLtz, "if-ltz")
+	ifz(opIfGez, "if-gez")
+	ifz(opIfGtz, "if-gtz")
+	ifz(opIfLez, "if-lez")
 
 	// RET src
 	l = label()
