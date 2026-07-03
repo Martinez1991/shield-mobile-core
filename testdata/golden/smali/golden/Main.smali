@@ -41,5 +41,10 @@
     move-result v1
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
 
+    const v1, 0xabcd
+    invoke-static {v1}, Lgolden/Calc;->narrow(I)I
+    move-result v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
+
     return-void
 .end method
