@@ -104,5 +104,15 @@
     move-result v1
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
 
+    const/4 v1, 0x5
+    invoke-static {v1}, Lgolden/Logic;->tagAbs(I)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+
+    const/4 v1, 0x0
+    invoke-static {v1}, Lgolden/Logic;->tagAbs(I)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+
     return-void
 .end method

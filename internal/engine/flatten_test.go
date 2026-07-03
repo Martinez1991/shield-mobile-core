@@ -45,12 +45,12 @@ func TestFlattenIntMethod(t *testing.T) {
 	}
 }
 
-func TestFlattenBailsOnReference(t *testing.T) {
-	// a ref-typed register would risk a verifier type conflict at the dispatcher
-	// join, so the typed-IR gate must refuse it.
-	_, ok := flatten(t, `
+func TestFlattenReferenceMethod(t *testing.T) {
+	// A consistently reference-typed method now flattens (#48 widening): v0 is a
+	// String on every path, so the dispatcher join keeps it a String.
+	out, ok := flatten(t, `
 .method public static g(I)Ljava/lang/String;
-    .registers 2
+    .registers 3
     if-lez p0, :neg
     const-string v0, "pos"
     return-object v0
@@ -58,8 +58,34 @@ func TestFlattenBailsOnReference(t *testing.T) {
     const-string v0, "neg"
     return-object v0
 .end method`)
+	if !ok {
+		t.Fatal("a consistently reference-typed method should flatten")
+	}
+	if !strings.Contains(out, ".packed-switch 0x0") {
+		t.Error("expected a dispatcher")
+	}
+	if !strings.Contains(out, `const-string v0, "pos"`) || !strings.Contains(out, `const-string v0, "neg"`) {
+		t.Error("reference instructions were lost")
+	}
+}
+
+func TestFlattenBailsOnInconsistentType(t *testing.T) {
+	// v0 is a reference and then reused as an int, so the dispatcher join would
+	// conflict — flattening must refuse it.
+	_, ok := flatten(t, `
+.method public static reuse(I)I
+    .registers 4
+    const-string v0, "hi"
+    move-object v1, v0
+    const/4 v0, 0x5
+    if-lez p0, :a
+    return v0
+    :a
+    const/4 v0, 0x0
+    return v0
+.end method`)
 	if ok {
-		t.Error("method with reference registers must not flatten (yet)")
+		t.Error("a slot reused with two types must not flatten")
 	}
 }
 

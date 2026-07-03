@@ -73,10 +73,11 @@ func flattenMethod(block []string, fid *int) ([]string, bool) {
 		}
 	}
 
-	// Typed-IR gate: the method must parse and be provably int-typed throughout,
-	// and expose a dead local to carry the dispatch state.
+	// Typed-IR gate: the method must parse and every register must hold a single
+	// consistent type wherever it is live, and there must be a dead local to
+	// carry the dispatch state.
 	m, ok := ir.ParseMethod(block)
-	if !ok || !pureIntMethod(m) {
+	if !ok || !consistentTypes(m) {
 		return block, false
 	}
 	stateReg, ok := freeStateRegister(m)
@@ -169,16 +170,32 @@ func flattenMethod(block []string, fid *int) ([]string, bool) {
 	return out, true
 }
 
-// pureIntMethod reports whether every register is int-typed (or unset) at every
-// program point — the condition under which flattening's dispatcher join cannot
-// create a Dalvik verifier type conflict.
-func pureIntMethod(m *ir.Method) bool {
+// consistentTypes reports whether every register holds a single, consistent type
+// at every program point where it is defined. That is the condition under which
+// flattening's central dispatcher — where all blocks merge — cannot create a
+// Dalvik verifier type conflict: a register that is (say) always a reference
+// stays a reference when the blocks join, so any block that reads it still
+// verifies. A slot reused with two different types (int here, ref there), or one
+// the IR already sees as conflicted, is refused.
+func consistentTypes(m *ir.Method) bool {
 	types := m.InferTypes()
+	seen := make([]ir.RegType, m.Regs)
+	for i := range seen {
+		seen[i] = ir.TUnknown
+	}
 	for i := range types {
 		for r := 0; r < m.Regs; r++ {
-			switch types[i].Reg(r) {
-			case ir.TLong, ir.TDouble, ir.TRef, ir.TWideHigh, ir.TConflict:
+			t := types[i].Reg(r)
+			if t == ir.TUnknown {
+				continue
+			}
+			if t == ir.TConflict {
 				return false
+			}
+			if seen[r] == ir.TUnknown {
+				seen[r] = t
+			} else if seen[r] != t {
+				return false // slot reused with an incompatible type
 			}
 		}
 	}

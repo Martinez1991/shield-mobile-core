@@ -77,3 +77,19 @@
     move-result v0
     return v0
 .end method
+
+# tagAbs holds a REFERENCE register (v1) across the central dispatcher: it calls
+# an owned helper (so the VM refuses it) and branches to return one of two
+# strings. Reference flattening (#48) — the typed-IR gate now allows it because
+# every register keeps a single consistent type. tagAbs(5)="nonzero"; tagAbs(0)="zero".
+.method public static tagAbs(I)Ljava/lang/String;
+    .registers 4
+    invoke-static {p0}, Lgolden/Logic;->absOf(I)I
+    move-result v0
+    if-lez v0, :z
+    const-string v1, "nonzero"
+    return-object v1
+    :z
+    const-string v1, "zero"
+    return-object v1
+.end method
