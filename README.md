@@ -131,10 +131,26 @@ As transformações preservam a semântica por construção:
 - **Junk** insere apenas `nop` após os diretivos `.param`/`.annotation`, mantendo a
   verificação do Dalvik.
 
+## Serviço (job-svc)
+
+Primeira fatia do control/build plane (doc §1.2): um serviço HTTP que envolve o
+engine com máquina de estados (§2.3) e API REST (§11.1), storage em memória +
+disco (sem infra externa).
+
+```bash
+go run ./cmd/job-svc --addr :8080 --work ./_work
+# POST /v1/builds (multipart: artifact=<zip do projeto smali>, policy=prod-high, Idempotency-Key)
+# GET  /v1/builds/{id}            -> status + eventos (QUEUED..READY/FAILED)
+# GET  /v1/builds/{id}/report     -> evidência (engine.Result)
+# GET  /v1/builds/{id}/artifact   -> zip protegido
+# GET  /healthz /livez /readyz
+```
+
 ## Arquitetura do código
 
 ```
-cmd/shield/            CLI (analyze / obfuscate / protect / policy / version)
+cmd/shield/            CLI (analyze / obfuscate / protect / policy / retrace / version)
+cmd/job-svc/           serviço HTTP (build orchestration + máquina de estados)
 internal/smali/        SHIELD-IR: loader + helpers de type descriptor
 internal/policy/       Policy-as-Code (JSON) + presets + Planner
 internal/engine/       passes: metadata, strings(+SH: xor/aes), member/class
