@@ -35,5 +35,11 @@
     move-result v1
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
 
+    const/4 v1, 0x6
+    const/4 v2, 0x2
+    invoke-static {v1, v2}, Lgolden/Calc;->bits(II)I
+    move-result v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
+
     return-void
 .end method

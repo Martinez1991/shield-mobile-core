@@ -50,6 +50,25 @@ const (
 	opIfGez
 	opIfGtz
 	opIfLez
+	// extended integer ALU (issue #14): 3-addr binops
+	opDiv // dest, a, b
+	opRem
+	opShl
+	opShr
+	opUshr
+	// unary
+	opNeg // dest, src
+	opNot
+	// literal forms (dest, src, imm32)
+	opAndLit
+	opOrLit
+	opXorLit
+	opShlLit
+	opShrLit
+	opUshrLit
+	opDivLit
+	opRemLit
+	opRsubLit // dest = imm - src
 	opCount
 )
 
@@ -204,22 +223,21 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 				return nil, false
 			}
 			push(vop{bytes: []byte{wire[bin2[op]-1], d, d, b}})
-		case op == "add-int/lit8" || op == "add-int/lit16":
+		case litMap[op] != 0:
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			v, ok3 := parseLit(fields[3])
 			if !ok1 || !ok2 || !ok3 {
 				return nil, false
 			}
-			push(vop{bytes: append([]byte{wire[opAddLit], d, s}, imm4(v)...)})
-		case op == "mul-int/lit8" || op == "mul-int/lit16":
+			push(vop{bytes: append([]byte{wire[litMap[op]-1], d, s}, imm4(v)...)})
+		case unary[op] != 0:
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
-			v, ok3 := parseLit(fields[3])
-			if !ok1 || !ok2 || !ok3 {
+			if !ok1 || !ok2 {
 				return nil, false
 			}
-			push(vop{bytes: append([]byte{wire[opMulLit], d, s}, imm4(v)...)})
+			push(vop{bytes: []byte{wire[unary[op]-1], d, s}})
 		case op == "return":
 			s, ok := reg(fields[1])
 			if !ok {
@@ -287,12 +305,52 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 var bin3 = map[string]int{
 	"add-int": opAdd + 1, "sub-int": opSub + 1, "mul-int": opMul + 1,
 	"and-int": opAnd + 1, "or-int": opOr + 1, "xor-int": opXor + 1,
+	"div-int": opDiv + 1, "rem-int": opRem + 1,
+	"shl-int": opShl + 1, "shr-int": opShr + 1, "ushr-int": opUshr + 1,
 }
 
 // bin2[op] = logical+1 for /2addr ALU ops.
 var bin2 = map[string]int{
 	"add-int/2addr": opAdd + 1, "sub-int/2addr": opSub + 1, "mul-int/2addr": opMul + 1,
 	"and-int/2addr": opAnd + 1, "or-int/2addr": opOr + 1, "xor-int/2addr": opXor + 1,
+	"div-int/2addr": opDiv + 1, "rem-int/2addr": opRem + 1,
+	"shl-int/2addr": opShl + 1, "shr-int/2addr": opShr + 1, "ushr-int/2addr": opUshr + 1,
+}
+
+// unary[op] = logical+1 for unary ALU ops (dest, src).
+var unary = map[string]int{"neg-int": opNeg + 1, "not-int": opNot + 1}
+
+// litMap[op] = logical+1 for literal ALU ops (dest, src, imm).
+var litMap = map[string]int{
+	"add-int/lit8": opAddLit + 1, "add-int/lit16": opAddLit + 1,
+	"mul-int/lit8": opMulLit + 1, "mul-int/lit16": opMulLit + 1,
+	"and-int/lit8": opAndLit + 1, "and-int/lit16": opAndLit + 1,
+	"or-int/lit8": opOrLit + 1, "or-int/lit16": opOrLit + 1,
+	"xor-int/lit8": opXorLit + 1, "xor-int/lit16": opXorLit + 1,
+	"shl-int/lit8": opShlLit + 1, "shr-int/lit8": opShrLit + 1, "ushr-int/lit8": opUshrLit + 1,
+	"div-int/lit8": opDivLit + 1, "div-int/lit16": opDivLit + 1,
+	"rem-int/lit8": opRemLit + 1, "rem-int/lit16": opRemLit + 1,
+	"rsub-int": opRsubLit + 1, "rsub-int/lit8": opRsubLit + 1,
+}
+
+const minInt32 = -2147483648
+
+// jdiv/jrem mirror Java/Dalvik int division: MIN/-1 wraps (no overflow trap),
+// and /0 is guarded to 0 (the real VM throws; the golden tests never divide by 0).
+func jdiv(a, b int32) int32 {
+	if b == 0 {
+		return 0
+	}
+	if a == minInt32 && b == -1 {
+		return a
+	}
+	return a / b
+}
+func jrem(a, b int32) int32 {
+	if b == 0 || (a == minInt32 && b == -1) {
+		return 0
+	}
+	return a % b
 }
 
 // vmExec is the Go reference interpreter (mirrors the injected smali VM.run).
@@ -353,6 +411,70 @@ func vmExec(code []byte, args []int32, wire []byte) int32 {
 			pc++
 			d, s := rd(), rd()
 			r[d] = r[s] * imm()
+		case opDiv:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			r[d] = jdiv(r[a], r[b])
+		case opRem:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			r[d] = jrem(r[a], r[b])
+		case opShl:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			r[d] = r[a] << (uint(r[b]) & 31)
+		case opShr:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			r[d] = r[a] >> (uint(r[b]) & 31)
+		case opUshr:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			r[d] = int32(uint32(r[a]) >> (uint(r[b]) & 31))
+		case opNeg:
+			pc++
+			d, s := rd(), rd()
+			r[d] = -r[s]
+		case opNot:
+			pc++
+			d, s := rd(), rd()
+			r[d] = ^r[s]
+		case opAndLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = r[s] & imm()
+		case opOrLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = r[s] | imm()
+		case opXorLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = r[s] ^ imm()
+		case opShlLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = r[s] << (uint(imm()) & 31)
+		case opShrLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = r[s] >> (uint(imm()) & 31)
+		case opUshrLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = int32(uint32(r[s]) >> (uint(imm()) & 31))
+		case opDivLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = jdiv(r[s], imm())
+		case opRemLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = jrem(r[s], imm())
+		case opRsubLit:
+			pc++
+			d, s := rd(), rd()
+			r[d] = imm() - r[s]
 		case opRet:
 			pc++
 			s := rd()
