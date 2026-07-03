@@ -99,6 +99,52 @@ func TestVMBranches(t *testing.T) {
 	}
 }
 
+const vmBits = `.method public static bits(II)I
+    .registers 6
+    shl-int v0, p0, p1
+    shr-int v1, p0, p1
+    ushr-int v2, p0, p1
+    add-int v0, v0, v1
+    add-int v0, v0, v2
+    div-int/lit8 v0, v0, 0x2
+    rem-int/lit8 v3, v0, 0x5
+    xor-int v0, v0, v3
+    neg-int v0, v0
+    not-int v0, v0
+    rsub-int/lit8 v0, v0, 0x14
+    and-int/lit8 v0, v0, 0xf
+    return v0
+.end method`
+
+func TestVMExtendedIntOps(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	bits := compileStr(t, vmBits, wire)
+
+	ref := func(a, b int32) int32 {
+		sh := uint(b) & 31
+		v0 := a << sh
+		v0 += a >> sh
+		v0 += int32(uint32(a) >> sh)
+		v0 = jdiv(v0, 2)
+		v0 ^= jrem(v0, 5)
+		v0 = -v0
+		v0 = ^v0
+		v0 = 20 - v0
+		return v0 & 0xf
+	}
+	for _, tc := range [][2]int32{{6, 2}, {13, 1}, {255, 3}, {1, 4}, {100, 5}} {
+		got := vmExec(bits, []int32{tc[0], tc[1]}, wire)
+		want := ref(tc[0], tc[1])
+		if got != want {
+			t.Errorf("bits(%d,%d) = %d, want %d", tc[0], tc[1], got, want)
+		}
+	}
+	// spot-check the golden value used by the ART gate.
+	if vmExec(bits, []int32{6, 2}, wire) != 7 {
+		t.Errorf("bits(6,2) = %d, want 7", vmExec(bits, []int32{6, 2}, wire))
+	}
+}
+
 func TestVMPermutationIsBijection(t *testing.T) {
 	for _, seed := range []int64{0, 1, 42, 0x5117e1d, -99} {
 		wire := vmPermutation(seed)
@@ -132,14 +178,14 @@ func TestVMDumpVector(t *testing.T) {
 		t.Skip("set SHIELD_VM_VEC to emit the VM validation vector")
 	}
 	wire := vmPermutation(0x5117e1d)
-	// Use the branchy sum() so the JVM harness validates loops/jumps too (#14).
-	code := compileStr(t, vmSumLoop, wire)
+	// Use bits() so the JVM harness validates the extended integer ALU (#14).
+	code := compileStr(t, vmBits, wire)
 	var sb strings.Builder
 	sb.WriteString(hexBytes(wire) + "\n")
 	sb.WriteString(hexBytes(code) + "\n")
-	for _, n := range []int32{0, 1, 5, 10, 50} {
-		sb.WriteString(strconv.Itoa(int(n)) + " 0 " +
-			strconv.Itoa(int(vmExec(code, []int32{n, 0}, wire))) + "\n")
+	for _, tc := range [][2]int32{{6, 2}, {13, 1}, {255, 3}, {1, 4}} {
+		sb.WriteString(strconv.Itoa(int(tc[0])) + " " + strconv.Itoa(int(tc[1])) + " " +
+			strconv.Itoa(int(vmExec(code, []int32{tc[0], tc[1]}, wire))) + "\n")
 	}
 	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
 		t.Fatal(err)

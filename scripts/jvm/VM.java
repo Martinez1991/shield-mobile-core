@@ -2,29 +2,27 @@ import java.nio.file.*;
 
 // Mirrors the injected smali Lshield/rt/VM; run()/i4()/i2() line-by-line, so
 // running it on Go-produced bytecode validates that the on-device interpreter
-// algorithm is correct (JVM int semantics match Android ART), including branches
-// (issue #14). Used by scripts/validate-vm.sh. Input file:
-//   line1=wire(hex) line2=bytecode(hex) then "a b expected" lines.
+// algorithm is correct (JVM int semantics match Android ART): arithmetic,
+// branches (#3/#14 slice 1) and the extended integer ALU (#14 slice 2). Used by
+// scripts/validate-vm.sh. Input: line1=wire(hex) line2=bytecode(hex) then
+// "a b expected" lines.
 public class VM {
   static byte[] hex(String s){ byte[] b=new byte[s.length()/2];
     for(int i=0;i<b.length;i++) b[i]=(byte)Integer.parseInt(s.substring(2*i,2*i+2),16); return b; }
-
   static int i4(byte[] bc,int pc){
-    int v=(bc[pc]<<24);
-    v|=((bc[pc+1]&0xff)<<16);
-    v|=((bc[pc+2]&0xff)<<8);
-    v|=(bc[pc+3]&0xff);
-    return v;
-  }
+    return (bc[pc]<<24)|((bc[pc+1]&0xff)<<16)|((bc[pc+2]&0xff)<<8)|(bc[pc+3]&0xff); }
   static int i2(byte[] bc,int pc){ return ((bc[pc]&0xff)<<8)|(bc[pc+1]&0xff); }
 
   static int run(byte[] bc,int[] args,byte[] w){
-    // logical->wire, indices match Go's opcode order
-    int LOADARG=w[0]&0xff,CONST=w[1]&0xff,MOVE=w[2]&0xff,ADD=w[3]&0xff,SUB=w[4]&0xff,
-        MUL=w[5]&0xff,AND=w[6]&0xff,OR=w[7]&0xff,XOR=w[8]&0xff,ADDLIT=w[9]&0xff,
-        MULLIT=w[10]&0xff,RET=w[11]&0xff,GOTO=w[12]&0xff,
-        IFEQ=w[13]&0xff,IFNE=w[14]&0xff,IFLT=w[15]&0xff,IFGE=w[16]&0xff,IFGT=w[17]&0xff,IFLE=w[18]&0xff,
-        IFEQZ=w[19]&0xff,IFNEZ=w[20]&0xff,IFLTZ=w[21]&0xff,IFGEZ=w[22]&0xff,IFGTZ=w[23]&0xff,IFLEZ=w[24]&0xff;
+    int[] o=new int[w.length];
+    for(int i=0;i<w.length;i++) o[i]=w[i]&0xff;
+    int LOADARG=o[0],CONST=o[1],MOVE=o[2],ADD=o[3],SUB=o[4],MUL=o[5],AND=o[6],OR=o[7],XOR=o[8],
+        ADDLIT=o[9],MULLIT=o[10],RET=o[11],GOTO=o[12],
+        IFEQ=o[13],IFNE=o[14],IFLT=o[15],IFGE=o[16],IFGT=o[17],IFLE=o[18],
+        IFEQZ=o[19],IFNEZ=o[20],IFLTZ=o[21],IFGEZ=o[22],IFGTZ=o[23],IFLEZ=o[24],
+        DIV=o[25],REM=o[26],SHL=o[27],SHR=o[28],USHR=o[29],NEG=o[30],NOT=o[31],
+        ANDLIT=o[32],ORLIT=o[33],XORLIT=o[34],SHLLIT=o[35],SHRLIT=o[36],USHRLIT=o[37],
+        DIVLIT=o[38],REMLIT=o[39],RSUBLIT=o[40];
     int numRegs=bc[0]&0xff;
     int[] r=new int[numRegs];
     int pc=1;
@@ -39,8 +37,24 @@ public class VM {
       if(op==AND){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]&r[b]; continue;}
       if(op==OR){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]|r[b]; continue;}
       if(op==XOR){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]^r[b]; continue;}
+      if(op==DIV){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]/r[b]; continue;}
+      if(op==REM){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]%r[b]; continue;}
+      if(op==SHL){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]<<r[b]; continue;}
+      if(op==SHR){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]>>r[b]; continue;}
+      if(op==USHR){int d=bc[pc++]&0xff,a=bc[pc++]&0xff,b=bc[pc++]&0xff; r[d]=r[a]>>>r[b]; continue;}
+      if(op==NEG){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; r[d]=-r[s]; continue;}
+      if(op==NOT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; r[d]=~r[s]; continue;}
       if(op==ADDLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]+im; continue;}
       if(op==MULLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]*im; continue;}
+      if(op==ANDLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]&im; continue;}
+      if(op==ORLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]|im; continue;}
+      if(op==XORLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]^im; continue;}
+      if(op==SHLLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]<<im; continue;}
+      if(op==SHRLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]>>im; continue;}
+      if(op==USHRLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]>>>im; continue;}
+      if(op==DIVLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]/im; continue;}
+      if(op==REMLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]%im; continue;}
+      if(op==RSUBLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=im-r[s]; continue;}
       if(op==RET){int s=bc[pc++]&0xff; return r[s];}
       if(op==GOTO){pc=i2(bc,pc); continue;}
       if(op==IFEQ){int a=bc[pc++]&0xff,b=bc[pc++]&0xff,t=i2(bc,pc); pc+=2; if(r[a]==r[b]) pc=t; continue;}

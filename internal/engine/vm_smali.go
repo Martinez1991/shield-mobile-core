@@ -163,6 +163,27 @@ func VMClass(base string, wire []byte) *smali.Class {
 	binop(opAnd, "and-int")
 	binop(opOr, "or-int")
 	binop(opXor, "xor-int")
+	binop(opDiv, "div-int")
+	binop(opRem, "rem-int")
+	binop(opShl, "shl-int")
+	binop(opShr, "shr-int")
+	binop(opUshr, "ushr-int")
+
+	// unary ops: dest, src
+	unop := func(op int, instr string) {
+		l := label()
+		p("    const/16 v5, 0x%x", w(op))
+		p("    if-ne v4, v5, %s", l)
+		readByte("v6") // dest
+		readByte("v7") // src
+		p("    aget v9, v2, v7")
+		p("    %s v9, v9", instr)
+		p("    aput v9, v2, v6")
+		p("    goto :loop")
+		p("    %s", l)
+	}
+	unop(opNeg, "neg-int")
+	unop(opNot, "not-int")
 
 	// lit ops: dest, src, imm32
 	litop := func(op int, instr string) {
@@ -182,6 +203,31 @@ func VMClass(base string, wire []byte) *smali.Class {
 	}
 	litop(opAddLit, "add-int")
 	litop(opMulLit, "mul-int")
+	litop(opAndLit, "and-int")
+	litop(opOrLit, "or-int")
+	litop(opXorLit, "xor-int")
+	litop(opShlLit, "shl-int")
+	litop(opShrLit, "shr-int")
+	litop(opUshrLit, "ushr-int")
+	litop(opDivLit, "div-int")
+	litop(opRemLit, "rem-int")
+
+	// RSUB imm, src: dest = imm - src
+	{
+		l := label()
+		p("    const/16 v5, 0x%x", w(opRsubLit))
+		p("    if-ne v4, v5, %s", l)
+		readByte("v6") // dest
+		readByte("v7") // src
+		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i4([BI)I")
+		p("    move-result v8") // imm
+		p("    add-int/lit8 v3, v3, 0x4")
+		p("    aget v9, v2, v7")
+		p("    sub-int v9, v8, v9")
+		p("    aput v9, v2, v6")
+		p("    goto :loop")
+		p("    %s", l)
+	}
 
 	// GOTO target: pc <- target (opcode already consumed; v3 points at target)
 	{
