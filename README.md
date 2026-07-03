@@ -36,6 +36,8 @@ shield obfuscate examples/smali --out out --policy examples/policy-prod-high.jso
 shield obfuscate examples/smali --out out --preset prod-high --report out/report.json
 # Logs estruturados (text|json) correlacionados por build_id:
 shield obfuscate examples/smali --out out --preset prod-high --log-format json --verbose
+# Cache content-addressed (determinismo P2): mesmo input+policy -> reusa a saída (~15x mais rápido):
+shield obfuscate examples/smali --out out --preset prod-high --cache .shield-cache
 
 # Round-trip completo de APK (requer apktool no PATH; apksigner p/ assinar)
 # A senha do keystore NUNCA vai no argv (CWE-214): use --ks-pass-file ou a env SHIELD_KS_PASS.

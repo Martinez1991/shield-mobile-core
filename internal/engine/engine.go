@@ -16,6 +16,11 @@ import (
 // dexMethodRefLimit is the Dalvik per-DEX method reference cap (64K).
 const dexMethodRefLimit = 65536
 
+// CacheVersion namespaces the content-addressed build cache. Bump it whenever a
+// change alters the engine's output for the same input+policy, so stale cache
+// entries are invalidated (issue #12).
+const CacheVersion = "1"
+
 // Result is the build evidence (section 2.2 stage 23: what was applied, where).
 type Result struct {
 	Policy           string     `json:"policy"`
