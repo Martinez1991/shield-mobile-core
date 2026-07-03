@@ -22,6 +22,7 @@ import (
 
 	"shield/internal/analyze"
 	"shield/internal/apk"
+	"shield/internal/cache"
 	"shield/internal/engine"
 	"shield/internal/obs"
 	"shield/internal/policy"
@@ -115,6 +116,7 @@ func cmdObfuscate(args []string) {
 	reportPath := fs.String("report", "", "write JSON evidence report here")
 	verbose := fs.Bool("verbose", false, "debug-level structured logs")
 	logFormat := fs.String("log-format", "text", "structured log format: text|json")
+	cacheDir := fs.String("cache", "", "content-addressed build cache dir (reuse output for identical input+policy)")
 	src, rest := splitSubject(args)
 	if src == "" {
 		die(20, "obfuscate: missing <smali-dir> (must be the first argument)")
@@ -123,6 +125,38 @@ func cmdObfuscate(args []string) {
 	pol := resolvePolicy(*policyPath, *preset)
 	if pol.Rename.Enabled && !pol.RenameScoped() {
 		fmt.Fprintln(os.Stderr, "warning: rename enabled but no includePrefixes set — renaming will be skipped (unscoped, unsafe). Use a policy file with rename.includePrefixes.")
+	}
+
+	log := obs.NewLogger(os.Stderr, *logFormat, *verbose)
+	bid := obs.BuildID(src, pol.Name, strconv.FormatInt(pol.Seed, 10))
+
+	// Content-addressed cache (only meaningful with --out, not --in-place).
+	var store *cache.Store
+	var key string
+	if *cacheDir != "" && !*inPlace && *out != "" {
+		var err error
+		if store, err = cache.New(*cacheDir); err != nil {
+			die(10, "cache: %v", err)
+		}
+		pj, _ := json.Marshal(pol)
+		if key, err = cache.Key(src, pj, engine.CacheVersion); err != nil {
+			die(10, "cache key: %v", err)
+		}
+		if _, ok := store.Get(key); ok {
+			if err := cache.CopyTree(store.OutDir(key), *out); err != nil {
+				die(10, "cache copy: %v", err)
+			}
+			var res engine.Result
+			if rb, err := store.Report(key); err == nil {
+				_ = json.Unmarshal(rb, &res)
+			}
+			log.Info("cache hit", "build_id", bid, "key", key[:12])
+			if *reportPath != "" {
+				_ = writeJSONFile(*reportPath, &res)
+			}
+			printObfSummary(&res, true)
+			return
+		}
 	}
 
 	target := src
@@ -136,8 +170,6 @@ func cmdObfuscate(args []string) {
 		target = *out
 	}
 
-	log := obs.NewLogger(os.Stderr, *logFormat, *verbose)
-	bid := obs.BuildID(src, pol.Name, strconv.FormatInt(pol.Seed, 10))
 	log.Debug("obfuscation starting", "build_id", bid, "src", src, "policy", pol.Name)
 
 	res, err := engine.Run(target, pol)
@@ -169,9 +201,27 @@ func cmdObfuscate(args []string) {
 			die(10, "report: %v", err)
 		}
 	}
-	fmt.Printf("policy=%s  classes=%d  metadata-=%d  strings-enc=%d  classes-renamed=%d  members-renamed=%d  manifest-keeps=%d  virtualized=%d  reordered=%d  opaque=%d  padded=%d  rasp=%t  method-refs~%d\n",
+	// Populate the content-addressed cache for future identical builds.
+	if store != nil {
+		if rb, err := json.Marshal(res); err == nil {
+			if err := store.Put(key, *out, rb); err != nil {
+				log.Warn("cache store failed", "build_id", bid, "err", err.Error())
+			}
+		}
+	}
+	printObfSummary(res, false)
+}
+
+// printObfSummary prints the human-readable obfuscation summary. cached marks a
+// cache hit (engine skipped).
+func printObfSummary(res *engine.Result, cached bool) {
+	tag := ""
+	if cached {
+		tag = "  [cache-hit]"
+	}
+	fmt.Printf("policy=%s  classes=%d  metadata-=%d  strings-enc=%d  classes-renamed=%d  members-renamed=%d  manifest-keeps=%d  virtualized=%d  reordered=%d  opaque=%d  padded=%d  rasp=%t  method-refs~%d%s\n",
 		res.Policy, res.ClassesTotal, res.MetadataRemoved, res.StringsEncrypted,
-		res.ClassesRenamed, res.MembersRenamed, res.ManifestKeeps, res.MethodsVirtual, res.MethodsReordered, res.OpaquePredicates, res.MethodsPadded, res.RASPInjected, res.MethodRefs)
+		res.ClassesRenamed, res.MembersRenamed, res.ManifestKeeps, res.MethodsVirtual, res.MethodsReordered, res.OpaquePredicates, res.MethodsPadded, res.RASPInjected, res.MethodRefs, tag)
 	if res.MultidexRisk {
 		fmt.Fprintf(os.Stderr, "warning: ~%d method refs — near the 64K single-DEX limit; ensure multidex is enabled.\n", res.MethodRefs)
 	}
