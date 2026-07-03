@@ -7,44 +7,66 @@ import (
 	"shield/internal/smali"
 )
 
-// virtualizedBody replaces a compiled method's body with a call to the VM: it
-// packs the args into a long[] (one slot per param; int params widened, long
-// params stored directly), embeds the bytecode as a byte[] payload and invokes
-// Lshield/rt/VM;->run (which returns a long). wideRet marks a long-returning
-// method (return-wide); otherwise the long is narrowed to int.
-func virtualizedBody(decl string, pinfos []paramInfo, code []byte, wideRet bool) []string {
+// virtualizedBody replaces a compiled method's body with a call to the VM. It
+// marshals the args into two arrays — a long[] of primitives (int widened, long
+// direct) and an Object[] of references — embeds the bytecode as a byte[] payload
+// and invokes Lshield/rt/VM;->run, which returns an Object (primitives boxed as
+// Long). The result is unboxed to match the method's declared return type.
+//
+// Register map (temps v0..v5, then the params): v0=[J prims, v1=[Object refs,
+// v2=[B bytecode, v3=index, v4:v5=wide box temp.
+func virtualizedBody(decl string, pinfos []paramInfo, code []byte) []string {
+	m := vmMethodDeclRE.FindStringSubmatch(decl)
+	ret := m[4]
+	retKind, _ := returnKind(ret)
 	regWidth := 0
 	for _, pi := range pinfos {
-		if pi.isLong {
+		if pi.kind == 'J' {
 			regWidth = pi.regOff + 2
 		} else {
 			regWidth = pi.regOff + 1
 		}
 	}
+	nPrim, nObj := primObjCounts(pinfos)
+
 	var b []string
 	b = append(b, decl)
-	// locals: v0 args, v1 index/bc, v2:v3 wide temp + run result.
-	b = append(b, fmt.Sprintf("    .registers %d", 4+regWidth))
-	b = append(b, fmt.Sprintf("    const/16 v0, 0x%x", len(pinfos)))
+	b = append(b, fmt.Sprintf("    .registers %d", 6+regWidth))
+	b = append(b, fmt.Sprintf("    const/16 v0, 0x%x", nPrim))
 	b = append(b, "    new-array v0, v0, [J")
-	for i, pi := range pinfos {
-		b = append(b, fmt.Sprintf("    const/16 v1, 0x%x", i))
-		if pi.isLong {
-			b = append(b, fmt.Sprintf("    aput-wide p%d, v0, v1", pi.regOff))
-		} else {
-			b = append(b, fmt.Sprintf("    int-to-long v2, p%d", pi.regOff))
-			b = append(b, "    aput-wide v2, v0, v1")
+	b = append(b, fmt.Sprintf("    const/16 v1, 0x%x", nObj))
+	b = append(b, "    new-array v1, v1, [Ljava/lang/Object;")
+	for _, pi := range pinfos {
+		b = append(b, fmt.Sprintf("    const/16 v3, 0x%x", pi.argIdx))
+		switch pi.kind {
+		case 'J':
+			b = append(b, fmt.Sprintf("    aput-wide p%d, v0, v3", pi.regOff))
+		case 'L':
+			b = append(b, fmt.Sprintf("    aput-object p%d, v1, v3", pi.regOff))
+		default: // int: widen into the long[] slot
+			b = append(b, fmt.Sprintf("    int-to-long v4, p%d", pi.regOff))
+			b = append(b, "    aput-wide v4, v0, v3")
 		}
 	}
-	b = append(b, fmt.Sprintf("    const/16 v1, 0x%x", len(code)))
-	b = append(b, "    new-array v1, v1, [B")
-	b = append(b, "    fill-array-data v1, :vmbc")
-	b = append(b, "    invoke-static {v1, v0}, Lshield/rt/VM;->run([B[J)J")
-	b = append(b, "    move-result-wide v2")
-	if wideRet {
-		b = append(b, "    return-wide v2")
-	} else {
-		b = append(b, "    long-to-int v0, v2")
+	b = append(b, fmt.Sprintf("    const/16 v2, 0x%x", len(code)))
+	b = append(b, "    new-array v2, v2, [B")
+	b = append(b, "    fill-array-data v2, :vmbc")
+	b = append(b, "    invoke-static {v2, v0, v1}, Lshield/rt/VM;->run([B[J[Ljava/lang/Object;)Ljava/lang/Object;")
+	b = append(b, "    move-result-object v0")
+	switch retKind {
+	case 'L':
+		b = append(b, fmt.Sprintf("    check-cast v0, %s", ret))
+		b = append(b, "    return-object v0")
+	case 'J':
+		b = append(b, "    check-cast v0, Ljava/lang/Long;")
+		b = append(b, "    invoke-virtual {v0}, Ljava/lang/Long;->longValue()J")
+		b = append(b, "    move-result-wide v0")
+		b = append(b, "    return-wide v0")
+	default: // int
+		b = append(b, "    check-cast v0, Ljava/lang/Long;")
+		b = append(b, "    invoke-virtual {v0}, Ljava/lang/Long;->longValue()J")
+		b = append(b, "    move-result-wide v0")
+		b = append(b, "    long-to-int v0, v0")
 		b = append(b, "    return v0")
 	}
 	b = append(b, "    :vmbc")
@@ -125,21 +147,25 @@ func VMClass(base string, wire []byte) *smali.Class {
 	p("    return-wide v0")
 	p(".end method")
 	p("")
-	// run: the fetch/decode/dispatch loop. args (p1) is a long[] (one slot per
-	// param). Returns long: RET (int) sign-extends, RET_WIDE returns the full
-	// long. r=int registers, v10=rw long registers.
-	p(".method public static run([B[J)J")
-	p("    .locals 18")
-	// p0 ([B bytecode) and p1 ([J args) sit at v18/v19 (locals+params), out of
-	// reach of aget/invoke (formats 23x/35c cap at v15). Relocate the bytecode to
-	// the free low register v11 via move-object/16 (format 32x reaches v18); the
-	// args array is copied on demand inside the two LOADARG handlers.
+	// run: the fetch/decode/dispatch loop. p1 is the long[] of primitive args,
+	// p2 the Object[] of reference args. Returns Object: RET/RET_WIDE box the
+	// primitive as Long, RET_OBJ returns the reference. r=int registers (v2),
+	// v10=rw long registers, v18=ro object registers.
+	p(".method public static run([B[J[Ljava/lang/Object;)Ljava/lang/Object;")
+	p("    .locals 20")
+	// params p0/p1/p2 sit at v20/v21/v22 (locals+params), out of reach of
+	// aget/invoke (formats 23x/35c cap at v15). Relocate the bytecode to the free
+	// low register v11 via move-object/16 (format 32x reaches high regs); the arg
+	// arrays are copied on demand inside the LOADARG handlers. The object register
+	// file lives in the high local v18, likewise reached via move-object/16.
 	p("    move-object/16 v11, p0")
 	p("    const/4 v0, 0x0")
 	p("    aget-byte v1, v11, v0")
 	p("    and-int/lit16 v1, v1, 0xff")
 	p("    new-array v2, v1, [I")
 	p("    new-array v10, v1, [J")
+	p("    new-array v9, v1, [Ljava/lang/Object;")
+	p("    move-object/16 v18, v9")
 	p("    const/4 v3, 0x1")
 	p("    :loop")
 	p("    aget-byte v4, v11, v3")
@@ -183,6 +209,21 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    %s", lw)
 	}
 
+	// LOADARG_OBJ dest, argIdx (object): copy from the Object[] args (p2) into ro
+	{
+		lo := label()
+		p("    const/16 v5, 0x%x", w(opLoadArgObj))
+		p("    if-ne v4, v5, %s", lo)
+		readByte("v6")
+		readByte("v7")
+		p("    move-object/16 v8, p2")
+		p("    aget-object v9, v8, v7")
+		p("    move-object/16 v8, v18")
+		p("    aput-object v9, v8, v6")
+		p("    goto :loop")
+		p("    %s", lo)
+	}
+
 	// CONST dest, imm32
 	l = label()
 	p("    const/16 v5, 0x%x", w(opConst))
@@ -205,6 +246,20 @@ func VMClass(base string, wire []byte) *smali.Class {
 	p("    aput v8, v2, v6")
 	p("    goto :loop")
 	p("    %s", l)
+
+	// MOVE_OBJ dest, src (move-object on the ro object register file)
+	{
+		lm := label()
+		p("    const/16 v5, 0x%x", w(opMoveObj))
+		p("    if-ne v4, v5, %s", lm)
+		readByte("v6")
+		readByte("v7")
+		p("    move-object/16 v8, v18")
+		p("    aget-object v9, v8, v7")
+		p("    aput-object v9, v8, v6")
+		p("    goto :loop")
+		p("    %s", lm)
+	}
 
 	// binary ops
 	binop := func(op int, instr string) {
@@ -381,14 +436,28 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    %s", l)
 	}
 
-	// RET_WIDE src
+	// RET_WIDE src: box the long as Long and return it (run returns Object).
 	{
 		l := label()
 		p("    const/16 v5, 0x%x", w(opRetWide))
 		p("    if-ne v4, v5, %s", l)
 		readByte("v6")
 		p("    aget-wide v12, v10, v6")
-		p("    return-wide v12")
+		p("    invoke-static {v12, v13}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;")
+		p("    move-result-object v0")
+		p("    return-object v0")
+		p("    %s", l)
+	}
+
+	// RET_OBJ src: return the object register directly.
+	{
+		l := label()
+		p("    const/16 v5, 0x%x", w(opRetObj))
+		p("    if-ne v4, v5, %s", l)
+		readByte("v6")
+		p("    move-object/16 v8, v18")
+		p("    aget-object v0, v8, v6")
+		p("    return-object v0")
 		p("    %s", l)
 	}
 
@@ -499,19 +568,21 @@ func VMClass(base string, wire []byte) *smali.Class {
 	ifz(opIfGtz, "if-gtz")
 	ifz(opIfLez, "if-lez")
 
-	// RET src (int): sign-extend to long and return-wide (run returns J)
+	// RET src (int): sign-extend to long, box as Long, return (run returns Object)
 	l = label()
 	p("    const/16 v5, 0x%x", w(opRet))
 	p("    if-ne v4, v5, %s", l)
 	readByte("v6")
 	p("    aget v0, v2, v6")
 	p("    int-to-long v12, v0")
-	p("    return-wide v12")
+	p("    invoke-static {v12, v13}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;")
+	p("    move-result-object v0")
+	p("    return-object v0")
 	p("    %s", l)
 
-	// unknown opcode
-	p("    const-wide/16 v0, -0x1")
-	p("    return-wide v0")
+	// unknown opcode -> null
+	p("    const/4 v0, 0x0")
+	p("    return-object v0")
 	p(".end method")
 
 	return &smali.Class{

@@ -360,13 +360,43 @@ func TestVMBailsOnUnsupported(t *testing.T) {
 	if _, ok := compileMethod(strings.Split(src, "\n"), vmPermutation(1)); ok {
 		t.Error("expected bail on method with invoke")
 	}
-	// non-int param -> bail
-	src2 := `.method public static f(Ljava/lang/String;)I
+	// unsupported primitive param (float) -> bail (int/long/reference are ok now)
+	src2 := `.method public static f(F)I
     .registers 2
     const/4 v0, 0x1
     return v0
 .end method`
 	if _, ok := compileMethod(strings.Split(src2, "\n"), vmPermutation(1)); ok {
-		t.Error("expected bail on non-int param")
+		t.Error("expected bail on unsupported (float) param")
+	}
+}
+
+const vmChoose = `.method public static choose(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+    .registers 4
+    if-lez p2, :second
+    move-object v0, p0
+    return-object v0
+    :second
+    move-object v0, p1
+    return-object v0
+.end method`
+
+func TestVMObject(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	code := compileStr(t, vmChoose, wire)
+	// choose returns p0 when the int is > 0, else p1 (object plumbing: object
+	// params + move-object + return-object).
+	cases := []struct {
+		sel  int32
+		want string
+	}{{1, "AA"}, {0, "BB"}, {-5, "BB"}, {99, "AA"}}
+	for _, c := range cases {
+		got := vmRunG(code, []int64{int64(c.sel)}, []any{"AA", "BB"}, wire)
+		if got.kind != 'L' {
+			t.Fatalf("choose(%d): kind = %c, want L", c.sel, got.kind)
+		}
+		if got.obj != c.want {
+			t.Errorf("choose(%d) = %v, want %q", c.sel, got.obj, c.want)
+		}
 	}
 }

@@ -69,7 +69,7 @@ func TestVMAssembles(t *testing.T) {
 	host := &smali.Class{
 		Descriptor: "Lcom/x/Y;",
 		Lines: append([]string{".class public Lcom/x/Y;", ".super Ljava/lang/Object;", ""},
-			virtualizedBody(".method public static poly(II)I", pinfos, code, false)...),
+			virtualizedBody(".method public static poly(II)I", pinfos, code)...),
 	}
 	writeClass(t, dir, "com/x/Y.smali", host.Lines)
 	vm := VMClass(dir, wire)

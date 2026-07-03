@@ -95,6 +95,13 @@ const (
 	opCmpLong     // destInt, a, b (both wide)
 	opRetWide     // src
 	opLoadArgWide // destWide, argIdx (long param)
+	// reference/object support (issue #14, objects). Object values live in a
+	// third parallel register file (ro) indexed like the int/wide files. Object
+	// args arrive in a separate [Ljava/lang/Object; array; the return ABI is
+	// unified to Object (primitives boxed as Long).
+	opLoadArgObj // destReg, argIdx (object param, from the [Object args)
+	opMoveObj    // dest, src (move-object)
+	opRetObj     // src (return-object)
 	opCount
 )
 
@@ -169,11 +176,20 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		return nil, false
 	}
 	flags, params, ret := m[1], m[3], m[4]
-	if !strings.Contains(" "+flags, " static ") || (ret != "I" && ret != "J") {
+	if !strings.Contains(" "+flags, " static ") {
+		return nil, false
+	}
+	if _, ok := returnKind(ret); !ok {
 		return nil, false
 	}
 	pinfos, regWidth, ok := parseParams(params)
 	if !ok || len(pinfos) == 0 {
+		return nil, false
+	}
+	// The virtualized wrapper marshals each param via aput-wide/aput-object on
+	// its param register, which (formats 23x/3rc) must be <= v15. Wrapper temps
+	// occupy v0..v5, so bail if the params would spill past v15.
+	if 5+regWidth > 15 {
 		return nil, false
 	}
 	regKind, regCount, ok := findRegs(block)
@@ -208,13 +224,17 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		ops = append(ops, v)
 	}
 
-	// pass 1a: arg loaders (one slot per param; long args go to the wide file)
-	for i, pi := range pinfos {
+	// pass 1a: arg loaders. Primitives read from the [J array (int narrows, long
+	// direct); objects read from the [Object array. argIdx indexes the right one.
+	for _, pi := range pinfos {
 		dest := byte(paramBase + pi.regOff)
-		if pi.isLong {
-			push(vop{bytes: []byte{wire[opLoadArgWide], dest, byte(i)}})
-		} else {
-			push(vop{bytes: []byte{wire[opLoadArg], dest, byte(i)}})
+		switch pi.kind {
+		case 'J':
+			push(vop{bytes: []byte{wire[opLoadArgWide], dest, byte(pi.argIdx)}})
+		case 'L':
+			push(vop{bytes: []byte{wire[opLoadArgObj], dest, byte(pi.argIdx)}})
+		default: // 'I'
+			push(vop{bytes: []byte{wire[opLoadArg], dest, byte(pi.argIdx)}})
 		}
 	}
 
@@ -247,6 +267,13 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 				return nil, false
 			}
 			push(vop{bytes: []byte{wire[opMove], d, s}})
+		case op == "move-object" || op == "move-object/16" || op == "move-object/from16":
+			d, ok1 := reg(fields[1])
+			s, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[opMoveObj], d, s}})
 		case bin3[op] != 0:
 			d, ok1 := reg(fields[1])
 			a, ok2 := reg(fields[2])
@@ -370,6 +397,12 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 				return nil, false
 			}
 			push(vop{bytes: []byte{wire[opRet], s}})
+		case op == "return-object":
+			s, ok := reg(fields[1])
+			if !ok {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[opRetObj], s}})
 		case op == "goto" || op == "goto/16" || op == "goto/32":
 			push(vop{bytes: []byte{wire[opGoto]}, isJump: true, label: fields[1]})
 		case branch2[op] != 0:
@@ -529,16 +562,29 @@ func cmp64(a, b int64) int32 {
 	}
 }
 
+// vmResult is the Go reference interpreter's typed result: kind 'I'/'J' carry a
+// primitive in i64 (int sign-extended), kind 'L' carries an object in obj.
+type vmResult struct {
+	kind byte
+	i64  int64
+	obj  any
+}
+
 // vmExec runs an int-returning method (mirrors the injected smali VM.run,
-// narrowed to int). Long-returning methods use vmRun directly.
+// narrowed to int).
 func vmExec(code []byte, args []int64, wire []byte) int32 { return int32(vmRun(code, args, wire)) }
 
-// vmRun is the Go reference interpreter. Args are int64 (one slot per param;
-// int params are sign-extended). It returns a 64-bit long; the RET (int) opcode
-// returns the sign-extended int, RET_WIDE returns the full long. Wide values
-// live in a parallel long register file rw, so the int handlers (using r) are
-// unchanged.
+// vmRun is a convenience wrapper for primitive-returning methods (no objects).
 func vmRun(code []byte, args []int64, wire []byte) int64 {
+	return vmRunG(code, args, nil, wire).i64
+}
+
+// vmRunG is the Go reference interpreter. Primitive args are int64 (one slot per
+// primitive param); object args are opaque values (one slot per object param).
+// Wide values live in a parallel long register file rw and objects in ro, so the
+// existing int handlers (using r) are unchanged. RET (int) sign-extends, RET_WIDE
+// returns the full long, RET_OBJ returns the object.
+func vmRunG(code []byte, args []int64, objArgs []any, wire []byte) vmResult {
 	inv := make([]int, opCount)
 	for logical, w := range wire {
 		inv[w] = logical
@@ -546,6 +592,7 @@ func vmRun(code []byte, args []int64, wire []byte) int64 {
 	numRegs := int(code[0])
 	r := make([]int32, numRegs)
 	rw := make([]int64, numRegs)
+	ro := make([]any, numRegs)
 	pc := 1
 	rd := func() byte { b := code[pc]; pc++; return b }
 	imm := func() int32 { v := int32(binary.BigEndian.Uint32(code[pc:])); pc += 4; return v }
@@ -752,11 +799,23 @@ func vmRun(code []byte, args []int64, wire []byte) int64 {
 		case opRetWide:
 			pc++
 			s := rd()
-			return rw[s]
+			return vmResult{kind: 'J', i64: rw[s]}
 		case opRet:
 			pc++
 			s := rd()
-			return int64(r[s])
+			return vmResult{kind: 'I', i64: int64(r[s])}
+		case opLoadArgObj:
+			pc++
+			d, ai := rd(), rd()
+			ro[d] = objArgs[ai]
+		case opMoveObj:
+			pc++
+			d, s := rd(), rd()
+			ro[d] = ro[s]
+		case opRetObj:
+			pc++
+			s := rd()
+			return vmResult{kind: 'L', obj: ro[s]}
 		case opGoto:
 			pc++
 			pc = rd16()
@@ -833,10 +892,10 @@ func vmRun(code []byte, args []int64, wire []byte) int64 {
 				pc = t
 			}
 		default:
-			return -1
+			return vmResult{kind: 'I', i64: -1}
 		}
 	}
-	return -1
+	return vmResult{kind: 'I', i64: -1}
 }
 
 // --- smali parsing helpers ------------------------------------------------
@@ -854,30 +913,102 @@ func countIntParams(params string) (int, bool) {
 	return n, true
 }
 
-// paramInfo describes one method parameter for the wide-aware register layout.
+// paramInfo describes one method parameter for the register/argument layout.
+// kind is 'I' (int), 'J' (long) or 'L' (reference). regOff is the register
+// offset from paramBase in the smali register file (int/ref = 1 slot, long = 2).
+// argIdx is the slot index into the primitive arg array ([J, for I/J) or the
+// object arg array ([Ljava/lang/Object;, for L) — the two are counted apart.
 type paramInfo struct {
-	isLong bool
-	regOff int // register offset from paramBase (int=1, long=2 slots)
+	kind   byte
+	regOff int
+	argIdx int
 }
 
-// parseParams accepts int (I) and long (J) parameters, returning per-param info
-// and the total register width. Bails on any other type (objects/arrays/etc.).
-func parseParams(params string) ([]paramInfo, int, bool) {
-	var out []paramInfo
-	off := 0
-	for i := 0; i < len(params); i++ {
+// tokenizeParams splits a bare parameter descriptor string into individual type
+// descriptors, e.g. "ILjava/lang/String;[I" -> ["I","Ljava/lang/String;","[I"].
+func tokenizeParams(params string) ([]string, bool) {
+	var out []string
+	for i := 0; i < len(params); {
+		start := i
+		for i < len(params) && params[i] == '[' { // array dimensions
+			i++
+		}
+		if i >= len(params) {
+			return nil, false
+		}
 		switch params[i] {
-		case 'I':
-			out = append(out, paramInfo{false, off})
-			off++
-		case 'J':
-			out = append(out, paramInfo{true, off})
-			off += 2
+		case 'L':
+			j := strings.IndexByte(params[i:], ';')
+			if j < 0 {
+				return nil, false
+			}
+			i += j + 1
+		case 'I', 'J', 'Z', 'B', 'S', 'C', 'F', 'D':
+			i++
+		default:
+			return nil, false
+		}
+		out = append(out, params[start:i])
+	}
+	return out, true
+}
+
+// parseParams classifies parameters into the wide/object-aware layout. Supports
+// int (I), long (J) and reference types (L...;, arrays), which cover the common
+// object-plumbing case; bails on the other primitives (Z/B/S/C/F/D) the VM does
+// not yet model. Returns per-param info and the total register width.
+func parseParams(params string) ([]paramInfo, int, bool) {
+	toks, ok := tokenizeParams(params)
+	if !ok {
+		return nil, 0, false
+	}
+	var out []paramInfo
+	regOff, primIdx, objIdx := 0, 0, 0
+	for _, d := range toks {
+		switch {
+		case d == "I":
+			out = append(out, paramInfo{'I', regOff, primIdx})
+			regOff++
+			primIdx++
+		case d == "J":
+			out = append(out, paramInfo{'J', regOff, primIdx})
+			regOff += 2
+			primIdx++
+		case d[0] == 'L' || d[0] == '[':
+			out = append(out, paramInfo{'L', regOff, objIdx})
+			regOff++
+			objIdx++
 		default:
 			return nil, 0, false
 		}
 	}
-	return out, off, true
+	return out, regOff, true
+}
+
+// returnKind classifies a return-type descriptor as int ('I'), long ('J') or
+// reference ('L'). Other types are not virtualizable.
+func returnKind(ret string) (byte, bool) {
+	switch {
+	case ret == "I":
+		return 'I', true
+	case ret == "J":
+		return 'J', true
+	case len(ret) > 0 && (ret[0] == 'L' || ret[0] == '['):
+		return 'L', true
+	}
+	return 0, false
+}
+
+// primObjCounts returns how many primitive (I/J) and object (L) params exist.
+func primObjCounts(pinfos []paramInfo) (prim, obj int) {
+	for _, pi := range pinfos {
+		if pi.kind == 'L' {
+			obj++
+		} else {
+			prim++
+		}
+	}
+	return
 }
 
 func findRegs(block []string) (string, int, bool) {
@@ -976,7 +1107,7 @@ func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64
 			m := vmMethodDeclRE.FindStringSubmatch(bk[0])
 			pinfos, _, _ := parseParams(m[3])
 			count++
-			return virtualizedBody(bk[0], pinfos, code, m[4] == "J")
+			return virtualizedBody(bk[0], pinfos, code)
 		})
 	}
 	if count == 0 {

@@ -64,5 +64,19 @@
     move-result-wide v1
     invoke-virtual {v0, v1, v2}, Ljava/io/PrintStream;->println(J)V
 
+    const-string v1, "AA"
+    const-string v2, "BB"
+    const/4 v3, 0x1
+    invoke-static {v1, v2, v3}, Lgolden/Logic;->choose(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+
+    const-string v1, "AA"
+    const-string v2, "BB"
+    const/4 v3, -0x1
+    invoke-static {v1, v2, v3}, Lgolden/Logic;->choose(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+
     return-void
 .end method
