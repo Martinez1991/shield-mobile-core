@@ -294,10 +294,10 @@ func compileMethod(block []string, wire []byte, ownedPrefixes []string) ([]byte,
 			push(vop{bytes: []byte{wire[opConstStr], d, byte(idx)}})
 			continue
 		}
-		// invoke-static of an external int method: parsed specially (the {..} reg
-		// list and method ref break splitOperands). Owner/name go into the pool.
-		if inv, isInv := parseInvokeStatic(t); isInv {
-			b, ok := compileInvokeStatic(inv, wire, reg, intern, ownedPrefixes)
+		// invoke of an external method: parsed specially (the {..} reg list and
+		// method ref break splitOperands). Owner/name/descriptor go into the pool.
+		if inv, isInv := parseInvoke(t); isInv {
+			b, ok := compileInvoke(inv, wire, reg, intern, ownedPrefixes)
 			if !ok {
 				return nil, nil, false
 			}
@@ -547,38 +547,43 @@ func parseConstString(t string) (reg, lit string, ok bool) {
 	return m[1], m[2], true
 }
 
-// invokeStatic is a parsed invoke-static instruction.
-type invokeStatic struct {
-	regs  []string // argument registers, in order
-	owner string   // owner descriptor, e.g. "Ljava/lang/Math;"
-	name  string   // method name
-	prms  string   // bare parameter descriptor, e.g. "II"
-	ret   string   // return descriptor
+// invocation is a parsed invoke-static/virtual/interface instruction.
+type invocation struct {
+	hasRecv bool     // true for virtual/interface (first register is the receiver)
+	regs    []string // register list, in order (receiver first for instance calls)
+	owner   string   // owner descriptor, e.g. "Ljava/lang/String;"
+	name    string
+	prms    string // bare parameter descriptor, e.g. "II"
+	ret     string
 }
 
-var invokeStaticRE = regexp.MustCompile(`^invoke-static\s+\{([^}]*)\}\s*,\s*(L[^;]+;)->([^(]+)\(([^)]*)\)(\S+)$`)
+// invStaticRecv is the receiver-register sentinel for a static call (null receiver).
+const invStaticRecv = 0xFF
 
-func parseInvokeStatic(t string) (invokeStatic, bool) {
-	m := invokeStaticRE.FindStringSubmatch(t)
+var invokeRE = regexp.MustCompile(`^invoke-(static|virtual|interface)\s+\{([^}]*)\}\s*,\s*(L[^;]+;)->([^(<>]+)\(([^)]*)\)(\S+)$`)
+
+func parseInvoke(t string) (invocation, bool) {
+	m := invokeRE.FindStringSubmatch(t)
 	if m == nil {
-		return invokeStatic{}, false
+		return invocation{}, false
 	}
 	var regs []string
-	for _, r := range strings.Split(m[1], ",") {
+	for _, r := range strings.Split(m[2], ",") {
 		if r = strings.TrimSpace(r); r != "" {
 			regs = append(regs, r)
 		}
 	}
-	return invokeStatic{regs: regs, owner: m[2], name: m[3], prms: m[4], ret: m[5]}, true
+	return invocation{hasRecv: m[1] != "static", regs: regs, owner: m[3], name: m[4], prms: m[5], ret: m[6]}, true
 }
 
-// compileInvokeStatic encodes an invoke-static, or returns ok=false if it is out
-// of the supported subset: the owner must be EXTERNAL (owned classes get renamed,
-// which would break name-based reflection at runtime); args and return may be
-// int, long or object (L...;) — other primitives and array types are not yet
-// handled. Encoding: ownerIdx, nameIdx, descIdx, argCount, then per param
-// (kind, lowReg, typeIdx).
-func compileInvokeStatic(inv invokeStatic, wire []byte, reg func(string) (byte, bool), intern func(string) int, ownedPrefixes []string) ([]byte, bool) {
+// compileInvoke encodes an invoke, or returns ok=false if it is out of the
+// supported subset: the owner must be EXTERNAL (owned classes get renamed, which
+// would break name-based reflection); args and return may be int, long or object
+// (L...;) — other primitives and array types are not yet handled. Instance calls
+// (virtual/interface) resolve dynamically via Method.invoke(receiver, ...).
+// Encoding: ownerIdx, nameIdx, descIdx, receiverReg, argCount, then per param
+// (kind, lowReg, typeIdx); receiverReg is invStaticRecv for a static call.
+func compileInvoke(inv invocation, wire []byte, reg func(string) (byte, bool), intern func(string) int, ownedPrefixes []string) ([]byte, bool) {
 	if isOwned(inv.owner, ownedPrefixes) {
 		return nil, false
 	}
@@ -592,6 +597,22 @@ func compileInvokeStatic(inv invokeStatic, wire []byte, reg func(string) (byte, 
 	default:
 		return nil, false
 	}
+
+	// Instance calls consume the first register as the receiver.
+	argRegs := inv.regs
+	receiver := byte(invStaticRecv)
+	if inv.hasRecv {
+		if len(inv.regs) == 0 {
+			return nil, false
+		}
+		r, okr := reg(inv.regs[0])
+		if !okr {
+			return nil, false
+		}
+		receiver = r
+		argRegs = inv.regs[1:]
+	}
+
 	ownerIdx := intern(smali.DescToDotted(inv.owner))
 	nameIdx := intern(inv.name)
 	descIdx := intern("(" + inv.prms + ")" + inv.ret) // Go reference-model key
@@ -600,12 +621,12 @@ func compileInvokeStatic(inv invokeStatic, wire []byte, reg func(string) (byte, 
 	}
 
 	var params []byte
-	ri := 0 // index into the invoke register list (a long consumes two)
+	ri := 0 // index into argRegs (a long consumes two)
 	for _, d := range toks {
-		if ri >= len(inv.regs) {
+		if ri >= len(argRegs) {
 			return nil, false
 		}
-		low, okr := reg(inv.regs[ri])
+		low, okr := reg(argRegs[ri])
 		if !okr {
 			return nil, false
 		}
@@ -628,10 +649,10 @@ func compileInvokeStatic(inv invokeStatic, wire []byte, reg func(string) (byte, 
 		}
 		params = append(params, kind, low, byte(typeIdx))
 	}
-	if ri != len(inv.regs) {
+	if ri != len(argRegs) {
 		return nil, false // register-count / width mismatch
 	}
-	b := []byte{wire[opInvokeStatic], byte(ownerIdx), byte(nameIdx), byte(descIdx), byte(len(toks))}
+	b := []byte{wire[opInvokeStatic], byte(ownerIdx), byte(nameIdx), byte(descIdx), receiver, byte(len(toks))}
 	return append(b, params...), true
 }
 
@@ -737,43 +758,51 @@ func cmp64(a, b int64) int32 {
 	}
 }
 
-// modeledStatics lets the Go reference interpreter simulate a few pure, side-
+// modeledCalls lets the Go reference interpreter simulate a few pure, side-
 // effect-free library methods so the compiler↔executor equivalence tests still
-// cover invoke-static methods. The injected smali interpreter uses real
-// reflection and is not limited to this set; ART is the oracle for the rest.
-// Keyed by "owner.name(params)ret" so overloads (e.g. max(II)I vs max(JJ)J) are
-// distinct; args and result are boxed as int32 / int64 / string(object).
-var modeledStatics = map[string]func([]any) any{
-	"java.lang.Math.max(II)I": func(a []any) any {
+// cover invoke methods. The injected smali interpreter uses real reflection and
+// is not limited to this set; ART is the oracle for the rest. Keyed by
+// "owner.name(params)ret" so overloads stay distinct; args/result are boxed as
+// int32 / int64 / string(object). recv is the receiver for instance calls (nil
+// for static).
+var modeledCalls = map[string]func(recv any, a []any) any{
+	"java.lang.Math.max(II)I": func(_ any, a []any) any {
 		if a[0].(int32) >= a[1].(int32) {
 			return a[0]
 		}
 		return a[1]
 	},
-	"java.lang.Math.min(II)I": func(a []any) any {
+	"java.lang.Math.min(II)I": func(_ any, a []any) any {
 		if a[0].(int32) <= a[1].(int32) {
 			return a[0]
 		}
 		return a[1]
 	},
-	"java.lang.Math.abs(I)I": func(a []any) any {
+	"java.lang.Math.abs(I)I": func(_ any, a []any) any {
 		if a[0].(int32) < 0 {
 			return -a[0].(int32)
 		}
 		return a[0]
 	},
-	"java.lang.Math.max(JJ)J": func(a []any) any {
+	"java.lang.Math.max(JJ)J": func(_ any, a []any) any {
 		if a[0].(int64) >= a[1].(int64) {
 			return a[0]
 		}
 		return a[1]
 	},
-	"java.lang.String.valueOf(I)Ljava/lang/String;": func(a []any) any {
+	"java.lang.String.valueOf(I)Ljava/lang/String;": func(_ any, a []any) any {
 		return strconv.Itoa(int(a[0].(int32)))
 	},
-	"java.lang.Integer.parseInt(Ljava/lang/String;)I": func(a []any) any {
+	"java.lang.Integer.parseInt(Ljava/lang/String;)I": func(_ any, a []any) any {
 		n, _ := strconv.Atoi(a[0].(string))
 		return int32(n)
+	},
+	// instance calls: recv is the receiver String.
+	"java.lang.String.length()I": func(recv any, _ []any) any {
+		return int32(len([]rune(recv.(string)))) // UTF-16 length == rune count for the golden's ASCII
+	},
+	"java.lang.String.concat(Ljava/lang/String;)Ljava/lang/String;": func(recv any, a []any) any {
+		return recv.(string) + a[0].(string)
 	},
 }
 
@@ -1038,7 +1067,12 @@ func vmRunG(code []byte, args []int64, objArgs []any, strs []string, wire []byte
 			ro[d] = strs[idx]
 		case opInvokeStatic:
 			pc++
-			ownerIdx, nameIdx, descIdx, argc := rd(), rd(), rd(), rd()
+			ownerIdx, nameIdx, descIdx := rd(), rd(), rd()
+			recvReg, argc := rd(), rd()
+			var recv any
+			if recvReg != invStaticRecv {
+				recv = ro[recvReg]
+			}
 			args := make([]any, argc)
 			for k := 0; k < int(argc); k++ {
 				kind, reg, _ := rd(), rd(), rd()
@@ -1054,8 +1088,8 @@ func vmRunG(code []byte, args []int64, objArgs []any, strs []string, wire []byte
 			// The Go reference model can only simulate a small set of pure library
 			// methods (the interpreter uses real reflection); ART is the oracle for
 			// the rest. Unmodelled calls leave pending nil.
-			if fn := modeledStatics[strs[ownerIdx]+"."+strs[nameIdx]+strs[descIdx]]; fn != nil {
-				pending = fn(args)
+			if fn := modeledCalls[strs[ownerIdx]+"."+strs[nameIdx]+strs[descIdx]]; fn != nil {
+				pending = fn(recv, args)
 			} else {
 				pending = nil
 			}

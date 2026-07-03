@@ -301,6 +301,19 @@ func VMClass(base string, wire []byte) *smali.Class {
 		readByte("v6") // ownerIdx
 		readByte("v7") // nameIdx
 		readByte("v9") // descIdx (Go model only; interpreter ignores)
+		// receiver register (0xff = static/null); resolve the object into v16.
+		readByte("v12")
+		nullRecv, recvDone := label(), label()
+		p("    const/16 v13, 0xff")
+		p("    if-eq v12, v13, %s", nullRecv)
+		p("    move-object/16 v13, v18") // ro
+		p("    aget-object v13, v13, v12")
+		p("    move-object/16 v16, v13") // receiver (survives)
+		p("    goto %s", recvDone)
+		p("    %s", nullRecv)
+		p("    const/4 v13, 0x0")
+		p("    move-object/16 v16, v13") // null receiver
+		p("    %s", recvDone)
 		readByte("v8") // argCount
 		p("    move-object/16 v13, p3")
 		p("    aget-object v0, v13, v6")
@@ -356,7 +369,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 		// resolve and invoke
 		p("    invoke-virtual {v0, v15, v1}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;")
 		p("    move-result-object v0")
-		p("    const/4 v13, 0x0") // null receiver (static)
+		p("    move-object/16 v13, v16") // receiver (null for static)
 		p("    invoke-virtual {v0, v13, v14}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
 		p("    move-result-object v19") // pending result (boxed)
 		p("    goto :loop")

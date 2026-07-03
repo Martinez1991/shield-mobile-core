@@ -408,6 +408,42 @@ func TestVMInvokeWideAndObject(t *testing.T) {
 	}
 }
 
+const vmStrLen = `.method public static strLen(Ljava/lang/String;)I
+    .registers 2
+    invoke-virtual {p0}, Ljava/lang/String;->length()I
+    move-result v0
+    return v0
+.end method`
+
+const vmCat = `.method public static cat(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+    .registers 3
+    invoke-virtual {p0, p1}, Ljava/lang/String;->concat(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method`
+
+func TestVMInvokeVirtual(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+
+	// String.length() — receiver, no args, int return.
+	code, pool, ok := compileMethod(strings.Split(vmStrLen, "\n"), wire, nil)
+	if !ok {
+		t.Fatal("strLen must be virtualizable")
+	}
+	if got := int32(vmRunG(code, nil, []any{"hello"}, pool, wire).i64); got != 5 {
+		t.Errorf("strLen(hello) = %d, want 5", got)
+	}
+
+	// String.concat(String) — receiver + object arg, object return.
+	code, pool, ok = compileMethod(strings.Split(vmCat, "\n"), wire, nil)
+	if !ok {
+		t.Fatal("cat must be virtualizable")
+	}
+	if got := vmRunG(code, nil, []any{"foo", "bar"}, pool, wire); got.kind != 'L' || got.obj != "foobar" {
+		t.Errorf("cat(foo,bar) = %v (%c), want \"foobar\"", got.obj, got.kind)
+	}
+}
+
 func TestVMPermutationIsBijection(t *testing.T) {
 	for _, seed := range []int64{0, 1, 42, 0x5117e1d, -99} {
 		wire := vmPermutation(seed)

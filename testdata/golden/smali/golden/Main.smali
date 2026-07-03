@@ -130,5 +130,16 @@
     move-result v1
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
 
+    const-string v1, "hello"
+    invoke-static {v1}, Lgolden/Logic;->strLen(Ljava/lang/String;)I
+    move-result v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
+
+    const-string v1, "foo"
+    const-string v2, "bar"
+    invoke-static {v1, v2}, Lgolden/Logic;->cat(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+
     return-void
 .end method

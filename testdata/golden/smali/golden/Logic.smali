@@ -120,3 +120,21 @@
     move-result v1
     return v1
 .end method
+
+# strLen: invoke-VIRTUAL on a receiver, no args, int return (#50). The call
+# resolves dynamically via reflection on the String receiver. strLen("hello")=5.
+.method public static strLen(Ljava/lang/String;)I
+    .registers 2
+    invoke-virtual {p0}, Ljava/lang/String;->length()I
+    move-result v0
+    return v0
+.end method
+
+# cat: invoke-VIRTUAL with a receiver + object arg + object return (#50).
+# cat("foo","bar")="foobar".
+.method public static cat(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+    .registers 3
+    invoke-virtual {p0, p1}, Ljava/lang/String;->concat(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
