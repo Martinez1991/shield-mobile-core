@@ -83,7 +83,7 @@
 
 # wide2 exercises const-wide + div-long/rem-long + shl-long. wide2(3,4) = 736.
 .method public static wide2(II)J
-    .registers 10
+    .registers 12
     int-to-long v0, p0
     int-to-long v2, p1
     const-wide/16 v4, 0x64

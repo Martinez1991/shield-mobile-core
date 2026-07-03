@@ -189,7 +189,7 @@ const vmPoly64 = `.method public static poly64(II)J
 .end method`
 
 const vmBits64 = `.method public static bits64(II)J
-    .registers 10
+    .registers 12
     int-to-long v0, p0
     int-to-long v2, p1
     const-wide/16 v4, 0x64
