@@ -135,18 +135,26 @@ As transformações preservam a semântica por construção:
 
 ## Serviço (job-svc)
 
-Primeira fatia do control/build plane (doc §1.2): um serviço HTTP que envolve o
-engine com máquina de estados (§2.3) e API REST (§11.1), storage em memória +
-disco (sem infra externa).
+Fatia do control/build plane (doc §1.2): serviço HTTP que envolve o engine com
+máquina de estados (§2.3), API REST (§11.1), **autenticação (API key / JWT
+HS256), RBAC deny-by-default, isolamento por tenant, auditoria hash-chained e
+quotas** (§14). Storage em memória + disco (sem infra externa).
 
 ```bash
-go run ./cmd/job-svc --addr :8080 --work ./_work
-# POST /v1/builds (multipart: artifact=<zip do projeto smali>, policy=prod-high, Idempotency-Key)
-# GET  /v1/builds/{id}            -> status + eventos (QUEUED..READY/FAILED)
+SHIELD_API_KEY=devkey SHIELD_TENANT=acme SHIELD_ROLES=developer \
+  go run ./cmd/job-svc --addr :8080 --work ./_work
+# (ou JWT HS256: SHIELD_JWT_SECRET / SHIELD_JWT_ISS / SHIELD_JWT_AUD)
+
+# POST /v1/builds  -H "X-API-Key: devkey" (multipart: artifact=<zip smali>, policy=prod-high, Idempotency-Key)
+# GET  /v1/builds/{id}            -> status + eventos (QUEUED..READY/FAILED)   [tenant-scoped]
 # GET  /v1/builds/{id}/report     -> evidência (engine.Result)
 # GET  /v1/builds/{id}/artifact   -> zip protegido
-# GET  /healthz /livez /readyz
+# GET  /v1/audit                  -> trilha imutável do tenant + verified
+# GET  /healthz /livez /readyz    (público)
 ```
+
+Códigos: `401` sem/credencial inválida · `403` sem permissão · `402` quota
+excedida · `404` build de outro tenant (isolamento).
 
 ## Arquitetura do código
 
