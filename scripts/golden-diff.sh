@@ -33,11 +33,16 @@ java -jar "$SMALI_JAR" a "$WORK/prot" -o "$WORK/prot.dex" >/dev/null
 echo "   both assembled OK (structural check passed)"
 
 # Need an adb device/emulator for the semantic differential run.
-if ! command -v adb >/dev/null || [ -z "$(adb devices | awk 'NR>1 && $2==\"device\"{print $1}')" ]; then
+DEVICE=""
+if command -v adb >/dev/null 2>&1; then
+  DEVICE="$(adb devices 2>/dev/null | grep -vi 'list of devices' | grep -w 'device' | head -1 | awk '{print $1}' || true)"
+fi
+if [ -z "$DEVICE" ]; then
   echo "==> no adb device: skipping the ART differential run (structural check only)."
   echo "    Run under CI (emulator) or with a connected device for the full gate."
   exit 0
 fi
+echo "==> using device: $DEVICE"
 
 run() { # $1 = dex path
   adb push "$1" /data/local/tmp/golden.dex >/dev/null
