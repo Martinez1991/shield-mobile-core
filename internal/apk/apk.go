@@ -67,8 +67,13 @@ func (o Options) logf(format string, a ...any) {
 	}
 }
 
-// Protect runs decode -> obfuscate -> build -> (sign).
+// Protect runs decode -> obfuscate -> build -> (sign). An Android App Bundle
+// (.aab) is routed to the bundle round-trip (section 4, issue #16); APKs go
+// through apktool below.
 func Protect(o Options) (*engine.Result, error) {
+	if IsAAB(o.Input) {
+		return protectAAB(o)
+	}
 	if !ToolAvailable("apktool") {
 		return nil, fmt.Errorf("apktool not found on PATH.\n" +
 			"Install it (https://apktool.org) to enable the APK round-trip, or run\n" +
