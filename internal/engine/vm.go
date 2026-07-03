@@ -36,8 +36,30 @@ const (
 	opAddLit // dest, src, imm32
 	opMulLit // dest, src, imm32
 	opRet    // src
+	// control flow (issue #14): targets are absolute 2-byte bytecode offsets.
+	opGoto // target
+	opIfEq // a, b, target
+	opIfNe
+	opIfLt
+	opIfGe
+	opIfGt
+	opIfLe
+	opIfEqz // a, target
+	opIfNez
+	opIfLtz
+	opIfGez
+	opIfGtz
+	opIfLez
 	opCount
 )
+
+// branch2/branchZ map smali comparison mnemonics to logical opcodes.
+var branch2 = map[string]int{
+	"if-eq": opIfEq, "if-ne": opIfNe, "if-lt": opIfLt, "if-ge": opIfGe, "if-gt": opIfGt, "if-le": opIfLe,
+}
+var branchZ = map[string]int{
+	"if-eqz": opIfEqz, "if-nez": opIfNez, "if-ltz": opIfLtz, "if-gez": opIfGez, "if-gtz": opIfGtz, "if-lez": opIfLez,
+}
 
 // vmPermutation returns wire[logical] = byte, a per-build bijection of [0,opCount).
 func vmPermutation(seed int64) []byte {
@@ -72,7 +94,23 @@ var (
 	vmRegsRE       = regexp.MustCompile(`^\s*\.(registers|locals)\s+(\d+)\s*$`)
 )
 
+// vop is one compiled VM instruction. For jumps, bytes holds opcode+reg operands
+// and a 2-byte target is appended at emit time once labels are resolved.
+type vop struct {
+	bytes  []byte
+	isJump bool
+	label  string
+}
+
+func imm4(v int64) []byte {
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], uint32(int32(v)))
+	return b[:]
+}
+
 // compileMethod returns the bytecode for a virtualizable method, or ok=false.
+// Supports straight-line integer ops plus branches/labels (issue #14) via a
+// two-pass layout that resolves label targets to absolute bytecode offsets.
 func compileMethod(block []string, wire []byte) ([]byte, bool) {
 	decl := block[0]
 	m := vmMethodDeclRE.FindStringSubmatch(decl)
@@ -85,10 +123,8 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 	}
 	nargs, ok := countIntParams(params)
 	if !ok || nargs == 0 {
-		return nil, false // only all-int params (and at least one)
+		return nil, false
 	}
-
-	// register layout
 	regKind, regCount, ok := findRegs(block)
 	if !ok {
 		return nil, false
@@ -102,14 +138,6 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 	if numRegs <= 0 || numRegs > 255 || paramBase < 0 {
 		return nil, false
 	}
-
-	var code []byte
-	emit := func(b ...byte) { code = append(code, b...) }
-	emitImm := func(v int64) {
-		var buf [4]byte
-		binary.BigEndian.PutUint32(buf[:], uint32(int32(v)))
-		code = append(code, buf[:]...)
-	}
 	reg := func(tok string) (byte, bool) {
 		idx, ok := parseReg(tok, paramBase)
 		if !ok || idx < 0 || idx >= numRegs {
@@ -118,14 +146,32 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		return byte(idx), true
 	}
 
-	// load args into their param registers
+	var ops []vop
+	labelToOp := map[string]int{}
+	var pending []string
+	push := func(v vop) {
+		for _, l := range pending {
+			labelToOp[l] = len(ops)
+		}
+		pending = nil
+		ops = append(ops, v)
+	}
+
+	// pass 1a: arg loaders
 	for i := 0; i < nargs; i++ {
-		emit(wire[opLoadArg], byte(paramBase+i), byte(i))
+		push(vop{bytes: []byte{wire[opLoadArg], byte(paramBase + i), byte(i)}})
 	}
 
 	body := methodBody(block)
 	for _, ln := range body {
 		t := strings.TrimSpace(ln)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if strings.HasPrefix(t, ":") {
+			pending = append(pending, t) // label; binds to the next emitted op
+			continue
+		}
 		fields := splitOperands(t)
 		op := fields[0]
 		switch {
@@ -135,15 +181,14 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			if !ok1 || !ok2 {
 				return nil, false
 			}
-			emit(wire[opConst], d)
-			emitImm(v)
+			push(vop{bytes: append([]byte{wire[opConst], d}, imm4(v)...)})
 		case op == "move" || op == "move/16" || op == "move/from16":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
 				return nil, false
 			}
-			emit(wire[opMove], d, s)
+			push(vop{bytes: []byte{wire[opMove], d, s}})
 		case bin3[op] != 0:
 			d, ok1 := reg(fields[1])
 			a, ok2 := reg(fields[2])
@@ -151,14 +196,14 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			if !ok1 || !ok2 || !ok3 {
 				return nil, false
 			}
-			emit(wire[bin3[op]-1], d, a, b)
+			push(vop{bytes: []byte{wire[bin3[op]-1], d, a, b}})
 		case bin2[op] != 0:
 			d, ok1 := reg(fields[1])
 			b, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
 				return nil, false
 			}
-			emit(wire[bin2[op]-1], d, d, b) // dest = dest OP src
+			push(vop{bytes: []byte{wire[bin2[op]-1], d, d, b}})
 		case op == "add-int/lit8" || op == "add-int/lit16":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
@@ -166,8 +211,7 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			if !ok1 || !ok2 || !ok3 {
 				return nil, false
 			}
-			emit(wire[opAddLit], d, s)
-			emitImm(v)
+			push(vop{bytes: append([]byte{wire[opAddLit], d, s}, imm4(v)...)})
 		case op == "mul-int/lit8" || op == "mul-int/lit16":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
@@ -175,22 +219,68 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			if !ok1 || !ok2 || !ok3 {
 				return nil, false
 			}
-			emit(wire[opMulLit], d, s)
-			emitImm(v)
+			push(vop{bytes: append([]byte{wire[opMulLit], d, s}, imm4(v)...)})
 		case op == "return":
 			s, ok := reg(fields[1])
 			if !ok {
 				return nil, false
 			}
-			emit(wire[opRet], s)
+			push(vop{bytes: []byte{wire[opRet], s}})
+		case op == "goto" || op == "goto/16" || op == "goto/32":
+			push(vop{bytes: []byte{wire[opGoto]}, isJump: true, label: fields[1]})
+		case branch2[op] != 0:
+			a, ok1 := reg(fields[1])
+			b, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[branch2[op]], a, b}, isJump: true, label: fields[3]})
+		case branchZ[op] != 0:
+			a, ok := reg(fields[1])
+			if !ok {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[branchZ[op]], a}, isJump: true, label: fields[2]})
 		case op == "nop":
-			// skip
+			// skip (labels carry to the next real op)
 		default:
-			return nil, false // unsupported instruction: bail
+			return nil, false
 		}
 	}
-	// prepend numRegs header
-	return append([]byte{byte(numRegs)}, code...), true
+	// labels at the very end bind past the last op.
+	for _, l := range pending {
+		labelToOp[l] = len(ops)
+	}
+
+	// pass 2: compute offsets (header byte occupies offset 0) then resolve.
+	offset := make([]int, len(ops)+1)
+	offset[0] = 1
+	for i, o := range ops {
+		sz := len(o.bytes)
+		if o.isJump {
+			sz += 2
+		}
+		offset[i+1] = offset[i] + sz
+	}
+	labelOffset := func(l string) (int, bool) {
+		idx, ok := labelToOp[l]
+		if !ok {
+			return 0, false
+		}
+		return offset[idx], true
+	}
+	code := []byte{byte(numRegs)}
+	for _, o := range ops {
+		code = append(code, o.bytes...)
+		if o.isJump {
+			t, ok := labelOffset(o.label)
+			if !ok || t > 0xFFFF {
+				return nil, false // undefined/oversized jump target
+			}
+			code = append(code, byte(t>>8), byte(t))
+		}
+	}
+	return code, true
 }
 
 // bin3[op] = logical+1 for 3-address ALU ops (0 means not present).
@@ -216,6 +306,7 @@ func vmExec(code []byte, args []int32, wire []byte) int32 {
 	pc := 1
 	rd := func() byte { b := code[pc]; pc++; return b }
 	imm := func() int32 { v := int32(binary.BigEndian.Uint32(code[pc:])); pc += 4; return v }
+	rd16 := func() int { t := int(code[pc])<<8 | int(code[pc+1]); pc += 2; return t }
 	for pc < len(code) {
 		switch inv[code[pc]] {
 		case opLoadArg:
@@ -266,6 +357,81 @@ func vmExec(code []byte, args []int32, wire []byte) int32 {
 			pc++
 			s := rd()
 			return r[s]
+		case opGoto:
+			pc++
+			pc = rd16()
+		case opIfEq:
+			pc++
+			a, b, t := rd(), rd(), rd16()
+			if r[a] == r[b] {
+				pc = t
+			}
+		case opIfNe:
+			pc++
+			a, b, t := rd(), rd(), rd16()
+			if r[a] != r[b] {
+				pc = t
+			}
+		case opIfLt:
+			pc++
+			a, b, t := rd(), rd(), rd16()
+			if r[a] < r[b] {
+				pc = t
+			}
+		case opIfGe:
+			pc++
+			a, b, t := rd(), rd(), rd16()
+			if r[a] >= r[b] {
+				pc = t
+			}
+		case opIfGt:
+			pc++
+			a, b, t := rd(), rd(), rd16()
+			if r[a] > r[b] {
+				pc = t
+			}
+		case opIfLe:
+			pc++
+			a, b, t := rd(), rd(), rd16()
+			if r[a] <= r[b] {
+				pc = t
+			}
+		case opIfEqz:
+			pc++
+			a, t := rd(), rd16()
+			if r[a] == 0 {
+				pc = t
+			}
+		case opIfNez:
+			pc++
+			a, t := rd(), rd16()
+			if r[a] != 0 {
+				pc = t
+			}
+		case opIfLtz:
+			pc++
+			a, t := rd(), rd16()
+			if r[a] < 0 {
+				pc = t
+			}
+		case opIfGez:
+			pc++
+			a, t := rd(), rd16()
+			if r[a] >= 0 {
+				pc = t
+			}
+		case opIfGtz:
+			pc++
+			a, t := rd(), rd16()
+			if r[a] > 0 {
+				pc = t
+			}
+		case opIfLez:
+			pc++
+			a, t := rd(), rd16()
+			if r[a] <= 0 {
+				pc = t
+			}
 		default:
 			return -1
 		}

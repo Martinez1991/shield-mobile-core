@@ -47,6 +47,58 @@ func TestVMExecMatchesFormula(t *testing.T) {
 	}
 }
 
+const vmSumLoop = `.method public static sum(I)I
+    .registers 4
+    const/4 v0, 0x0
+    const/4 v1, 0x0
+    :loop
+    if-ge v1, p0, :done
+    add-int/2addr v0, v1
+    add-int/lit8 v1, v1, 0x1
+    goto :loop
+    :done
+    return v0
+.end method`
+
+const vmClassify = `.method public static classify(I)I
+    .registers 2
+    const/16 v0, 0xa
+    if-lt p0, v0, :small
+    const/16 v0, 0x64
+    return v0
+    :small
+    const/4 v0, 0x1
+    return v0
+.end method`
+
+func TestVMBranches(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	sum := compileStr(t, vmSumLoop, wire)
+	classify := compileStr(t, vmClassify, wire)
+
+	sumRef := func(n int32) int32 {
+		var s int32
+		for i := int32(0); i < n; i++ {
+			s += i
+		}
+		return s
+	}
+	classifyRef := func(n int32) int32 {
+		if n < 10 {
+			return 1
+		}
+		return 100
+	}
+	for _, n := range []int32{0, 1, 5, 10, 20, 50} {
+		if got := vmExec(sum, []int32{n}, wire); got != sumRef(n) {
+			t.Errorf("sum(%d) = %d, want %d", n, got, sumRef(n))
+		}
+		if got := vmExec(classify, []int32{n}, wire); got != classifyRef(n) {
+			t.Errorf("classify(%d) = %d, want %d", n, got, classifyRef(n))
+		}
+	}
+}
+
 func TestVMPermutationIsBijection(t *testing.T) {
 	for _, seed := range []int64{0, 1, 42, 0x5117e1d, -99} {
 		wire := vmPermutation(seed)
@@ -80,13 +132,14 @@ func TestVMDumpVector(t *testing.T) {
 		t.Skip("set SHIELD_VM_VEC to emit the VM validation vector")
 	}
 	wire := vmPermutation(0x5117e1d)
-	code := compileStr(t, vmPoly, wire)
+	// Use the branchy sum() so the JVM harness validates loops/jumps too (#14).
+	code := compileStr(t, vmSumLoop, wire)
 	var sb strings.Builder
 	sb.WriteString(hexBytes(wire) + "\n")
 	sb.WriteString(hexBytes(code) + "\n")
-	for _, tc := range [][2]int32{{3, 4}, {-5, 10}, {100, -7}} {
-		sb.WriteString(strconv.Itoa(int(tc[0])) + " " + strconv.Itoa(int(tc[1])) + " " +
-			strconv.Itoa(int(vmExec(code, []int32{tc[0], tc[1]}, wire))) + "\n")
+	for _, n := range []int32{0, 1, 5, 10, 50} {
+		sb.WriteString(strconv.Itoa(int(n)) + " 0 " +
+			strconv.Itoa(int(vmExec(code, []int32{n, 0}, wire))) + "\n")
 	}
 	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
 		t.Fatal(err)
