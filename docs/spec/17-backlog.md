@@ -58,6 +58,8 @@ Hierarquia: **Epic → Feature → User Story → Task/Subtask**. Estimativa em 
 | RF-017 CI/CD | E7 | #7 |
 | RF-014 observabilidade | — | **#21 ✅** (OTLP #53 ✅) |
 | RF-020 dashboard | E6 | (a criar) |
-| RF-012 IA | E8 | (a criar) |
+| RF-012 IA | E8 | #65 (épico aberto) |
+| — iOS | E9 | #63 (épico aberto) |
+| — nativo/LLVM | — | #64 (épico aberto) |
 
 > **✅ Entregue em v0.2.0.** O épico **E10 (VM & flattening)**, planejado para V3, foi antecipado: IR tipada Go-native, flattening com dispatcher central e invoke data-driven, todos verificados em ART real. Ver [§16 Roadmap → Estado atual](16-roadmap.md#estado-atual--v020-entregue).
