@@ -69,6 +69,10 @@ const (
 	opDivLit
 	opRemLit
 	opRsubLit // dest = imm - src
+	// narrowing conversions (dest, src)
+	opI2B // (byte)  sign-extend low 8
+	opI2S // (short) sign-extend low 16
+	opI2C // (char)  zero-extend low 16
 	opCount
 )
 
@@ -194,7 +198,9 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		fields := splitOperands(t)
 		op := fields[0]
 		switch {
-		case op == "const/4" || op == "const/16" || op == "const":
+		// const/high16's smali operand is already the full 32-bit value (low 16
+		// bits zero), so it loads exactly like const — no shift.
+		case op == "const/4" || op == "const/16" || op == "const" || op == "const/high16":
 			d, ok1 := reg(fields[1])
 			v, ok2 := parseLit(fields[2])
 			if !ok1 || !ok2 {
@@ -318,7 +324,10 @@ var bin2 = map[string]int{
 }
 
 // unary[op] = logical+1 for unary ALU ops (dest, src).
-var unary = map[string]int{"neg-int": opNeg + 1, "not-int": opNot + 1}
+var unary = map[string]int{
+	"neg-int": opNeg + 1, "not-int": opNot + 1,
+	"int-to-byte": opI2B + 1, "int-to-short": opI2S + 1, "int-to-char": opI2C + 1,
+}
 
 // litMap[op] = logical+1 for literal ALU ops (dest, src, imm).
 var litMap = map[string]int{
@@ -475,6 +484,18 @@ func vmExec(code []byte, args []int32, wire []byte) int32 {
 			pc++
 			d, s := rd(), rd()
 			r[d] = imm() - r[s]
+		case opI2B:
+			pc++
+			d, s := rd(), rd()
+			r[d] = int32(int8(r[s]))
+		case opI2S:
+			pc++
+			d, s := rd(), rd()
+			r[d] = int32(int16(r[s]))
+		case opI2C:
+			pc++
+			d, s := rd(), rd()
+			r[d] = int32(uint16(r[s]))
 		case opRet:
 			pc++
 			s := rd()

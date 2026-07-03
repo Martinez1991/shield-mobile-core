@@ -22,7 +22,7 @@ public class VM {
         IFEQZ=o[19],IFNEZ=o[20],IFLTZ=o[21],IFGEZ=o[22],IFGTZ=o[23],IFLEZ=o[24],
         DIV=o[25],REM=o[26],SHL=o[27],SHR=o[28],USHR=o[29],NEG=o[30],NOT=o[31],
         ANDLIT=o[32],ORLIT=o[33],XORLIT=o[34],SHLLIT=o[35],SHRLIT=o[36],USHRLIT=o[37],
-        DIVLIT=o[38],REMLIT=o[39],RSUBLIT=o[40];
+        DIVLIT=o[38],REMLIT=o[39],RSUBLIT=o[40],I2B=o[41],I2S=o[42],I2C=o[43];
     int numRegs=bc[0]&0xff;
     int[] r=new int[numRegs];
     int pc=1;
@@ -55,6 +55,9 @@ public class VM {
       if(op==DIVLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]/im; continue;}
       if(op==REMLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=r[s]%im; continue;}
       if(op==RSUBLIT){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; int im=i4(bc,pc); pc+=4; r[d]=im-r[s]; continue;}
+      if(op==I2B){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; r[d]=(byte)r[s]; continue;}
+      if(op==I2S){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; r[d]=(short)r[s]; continue;}
+      if(op==I2C){int d=bc[pc++]&0xff,s=bc[pc++]&0xff; r[d]=(char)r[s]; continue;}
       if(op==RET){int s=bc[pc++]&0xff; return r[s];}
       if(op==GOTO){pc=i2(bc,pc); continue;}
       if(op==IFEQ){int a=bc[pc++]&0xff,b=bc[pc++]&0xff,t=i2(bc,pc); pc+=2; if(r[a]==r[b]) pc=t; continue;}

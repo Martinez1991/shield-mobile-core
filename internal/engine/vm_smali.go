@@ -184,6 +184,9 @@ func VMClass(base string, wire []byte) *smali.Class {
 	}
 	unop(opNeg, "neg-int")
 	unop(opNot, "not-int")
+	unop(opI2B, "int-to-byte")
+	unop(opI2S, "int-to-short")
+	unop(opI2C, "int-to-char")
 
 	// lit ops: dest, src, imm32
 	litop := func(op int, instr string) {

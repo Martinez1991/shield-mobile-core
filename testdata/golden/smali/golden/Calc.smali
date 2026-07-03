@@ -44,3 +44,17 @@
     and-int/lit8 v0, v0, 0xf
     return v0
 .end method
+
+# narrow exercises const/high16 and the narrowing conversions (byte/short/char).
+# narrow(0xABCD) = -51 + -21555 + 43981 = 22375
+.method public static narrow(I)I
+    .registers 4
+    const/high16 v0, 0x12340000
+    or-int v0, v0, p0
+    int-to-short v1, v0
+    int-to-char v2, v0
+    int-to-byte v0, v0
+    add-int v0, v0, v1
+    add-int v0, v0, v2
+    return v0
+.end method
