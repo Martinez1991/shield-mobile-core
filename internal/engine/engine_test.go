@@ -278,6 +278,25 @@ func TestRunRiskDriven(t *testing.T) {
 	if !strings.Contains(s, "add-int v0, p0, p1") {
 		t.Error("low-risk add should be left untouched (not virtualized)")
 	}
+
+	// Explainability report (#70): both methods appear, sorted by score; enc is
+	// protected with reasons, add is not.
+	if len(res.RiskMap) != 2 {
+		t.Fatalf("RiskMap has %d entries, want 2", len(res.RiskMap))
+	}
+	enc, add := res.RiskMap[0], res.RiskMap[1] // sorted by score desc
+	if !strings.Contains(enc.Method, "enc") || !enc.Protected || enc.Technique != "vm" {
+		t.Errorf("enc entry = %+v, want protected vm", enc)
+	}
+	if len(enc.Reasons) == 0 {
+		t.Error("protected method should carry explaining reasons")
+	}
+	if enc.Score <= add.Score {
+		t.Errorf("enc (%.2f) should outrank add (%.2f)", enc.Score, add.Score)
+	}
+	if !strings.Contains(add.Method, "add") || add.Protected {
+		t.Errorf("add entry = %+v, want not protected", add)
+	}
 }
 
 func TestRunUniformWithoutRisk(t *testing.T) {

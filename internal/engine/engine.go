@@ -11,6 +11,7 @@ import (
 
 	"shield/internal/manifest"
 	"shield/internal/policy"
+	"shield/internal/risk"
 	"shield/internal/smali"
 )
 
@@ -19,6 +20,17 @@ import (
 type Stage struct {
 	Name       string `json:"name"`
 	DurationNS int64  `json:"durationNs"`
+}
+
+// RiskEntry explains one method's risk-driven decision (issue #70): its static
+// risk score, the top contributing reasons, and whether (and how) it was
+// protected. Populated only when the policy is risk-driven.
+type RiskEntry struct {
+	Method    string   `json:"method"` // e.g. "Lcom/bank/pay/Vault;->enc(I)I"
+	Score     float64  `json:"score"`
+	Reasons   []string `json:"reasons"`
+	Protected bool     `json:"protected"`
+	Technique string   `json:"technique,omitempty"` // "vm" | "flatten"
 }
 
 // dexMethodRefLimit is the Dalvik per-DEX method reference cap (64K).
@@ -31,25 +43,26 @@ const CacheVersion = "1"
 
 // Result is the build evidence (section 2.2 stage 23: what was applied, where).
 type Result struct {
-	Policy           string     `json:"policy"`
-	Seed             int64      `json:"seed"`
-	ClassesTotal     int        `json:"classesTotal"`
-	MetadataRemoved  int        `json:"metadataDirectivesRemoved"`
-	StringsEncrypted int        `json:"stringsEncrypted"`
-	ClassesRenamed   int        `json:"classesRenamed"`
-	MembersRenamed   int        `json:"membersRenamed"`
-	MethodsVirtual   int        `json:"methodsVirtualized"`
-	MethodsFlattened int        `json:"methodsFlattened"`
-	MethodsReordered int        `json:"methodsReordered"`
-	OpaquePredicates int        `json:"opaquePredicates"`
-	MethodsPadded    int        `json:"methodsPadded"`
-	RASPInjected     bool       `json:"raspInjected"`
-	ManifestKeeps    int        `json:"manifestKeeps"`
-	MethodRefs       int        `json:"methodRefsEstimate"`
-	MultidexRisk     bool       `json:"multidexRisk"`
-	Applied          []string   `json:"appliedTechniques"`
-	Stages           []Stage    `json:"stages,omitempty"`
-	Mapping          []MapEntry `json:"-"`
+	Policy           string      `json:"policy"`
+	Seed             int64       `json:"seed"`
+	ClassesTotal     int         `json:"classesTotal"`
+	MetadataRemoved  int         `json:"metadataDirectivesRemoved"`
+	StringsEncrypted int         `json:"stringsEncrypted"`
+	ClassesRenamed   int         `json:"classesRenamed"`
+	MembersRenamed   int         `json:"membersRenamed"`
+	MethodsVirtual   int         `json:"methodsVirtualized"`
+	MethodsFlattened int         `json:"methodsFlattened"`
+	MethodsReordered int         `json:"methodsReordered"`
+	OpaquePredicates int         `json:"opaquePredicates"`
+	MethodsPadded    int         `json:"methodsPadded"`
+	RASPInjected     bool        `json:"raspInjected"`
+	ManifestKeeps    int         `json:"manifestKeeps"`
+	MethodRefs       int         `json:"methodRefsEstimate"`
+	MultidexRisk     bool        `json:"multidexRisk"`
+	Applied          []string    `json:"appliedTechniques"`
+	Stages           []Stage     `json:"stages,omitempty"`
+	RiskMap          []RiskEntry `json:"riskMap,omitempty"`
+	Mapping          []MapEntry  `json:"-"`
 }
 
 // Run applies the policy's protection plan to the smali project rooted at root,
@@ -113,9 +126,13 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	// touch methods scoring >= the threshold. minRisk == 0 means "no gate" (apply
 	// uniformly), preserving the default behaviour.
 	minRisk := 0.0
+	var riskAssessed map[string]risk.Assessment
 	if p.Risk.Enabled {
 		minRisk = p.Risk.Threshold
 		res.Applied = append(res.Applied, "risk-driven")
+		// Assess every owned method BEFORE the passes mutate their bodies (the
+		// score reflects the original method), for the audit report (#70).
+		riskAssessed = assessMethods(classes, p.Rename.IncludePrefixes)
 	}
 	var vmClass *smali.Class
 	if p.VM.Enabled {
@@ -139,6 +156,12 @@ func Run(root string, p policy.Policy) (*Result, error) {
 				res.Applied = append(res.Applied, "control-flow-flattening")
 			}
 		})
+	}
+	// Risk audit report (#70): match each pre-pass assessment to the now-mutated
+	// body to record whether/how it was protected. Runs before renaming (method
+	// decls are still original and stable).
+	if p.Risk.Enabled {
+		res.RiskMap = finalizeRiskMap(classes, p.Rename.IncludePrefixes, riskAssessed)
 	}
 	if p.Strings.Enabled {
 		stage("strings", func() {
