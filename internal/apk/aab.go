@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"shield/internal/engine"
+	"shield/internal/manifest"
 	"shield/internal/policy"
 )
 
@@ -21,10 +22,9 @@ import (
 // The DEX round-trip shells out to baksmali/smali (as the correctness gate does);
 // the (un)packing is pure Go so it stays deterministic and offline-testable.
 //
-// Limitation (documented, follow-up): a module's AndroidManifest.xml inside an
-// AAB is protobuf-encoded, so the text-manifest keep rules that protect renamed
-// components in the APK path are not derived here. Scope identifier renaming with
-// includePrefixes accordingly (or keep it off) until protobuf keeps land.
+// A module's AndroidManifest.xml is protobuf-encoded (aapt2 XmlNode); its
+// declared components are parsed into keep-rules (manifest.KeepClassesPB, #51) and
+// fed to the rename pass, so renaming never breaks a manifest-referenced class.
 
 // IsAAB reports whether path is an Android App Bundle: by extension, or by the
 // presence of the BundleConfig.pb marker inside the zip.
@@ -57,6 +57,17 @@ func moduleOfDex(name string) (string, bool) {
 	return "", false
 }
 
+// moduleOfManifest returns the module for a protobuf manifest entry
+// ("base/manifest/AndroidManifest.xml" -> "base"), or ok=false.
+func moduleOfManifest(name string) (string, bool) {
+	name = strings.TrimPrefix(name, "./")
+	parts := strings.Split(name, "/")
+	if len(parts) == 3 && parts[1] == "manifest" && parts[2] == "AndroidManifest.xml" {
+		return parts[0], true
+	}
+	return "", false
+}
+
 // protectAAB runs the bundle round-trip: protect each module's DEX and repack.
 func protectAAB(o Options) (*engine.Result, error) {
 	for _, t := range []string{"baksmali", "smali"} {
@@ -82,8 +93,9 @@ func protectAAB(o Options) (*engine.Result, error) {
 	}
 	defer zr.Close()
 
-	// Group DEX entries by module.
+	// Group DEX entries by module, and index each module's protobuf manifest.
 	modules := map[string][]*zip.File{}
+	manifests := map[string]*zip.File{}
 	var order []string
 	for _, f := range zr.File {
 		if m, ok := moduleOfDex(f.Name); ok {
@@ -91,6 +103,9 @@ func protectAAB(o Options) (*engine.Result, error) {
 				order = append(order, m)
 			}
 			modules[m] = append(modules[m], f)
+		}
+		if m, ok := moduleOfManifest(f.Name); ok {
+			manifests[m] = f
 		}
 	}
 	if len(modules) == 0 {
@@ -101,7 +116,7 @@ func protectAAB(o Options) (*engine.Result, error) {
 	agg := &engine.Result{}
 	for _, mod := range order {
 		o.logf("protecting module %q", mod)
-		res, dex, err := protectModule(work, mod, modules[mod], o.Policy)
+		res, dex, err := protectModule(work, mod, modules[mod], manifests[mod], o.Policy, o.logf)
 		if err != nil {
 			return nil, fmt.Errorf("module %s: %w", mod, err)
 		}
@@ -121,8 +136,10 @@ func protectAAB(o Options) (*engine.Result, error) {
 }
 
 // protectModule disassembles a module's DEX, applies the engine, and reassembles
-// a single DEX, returning its bytes.
-func protectModule(work, mod string, dexes []*zip.File, pol policy.Policy) (*engine.Result, []byte, error) {
+// a single DEX, returning its bytes. The module's protobuf manifest (if present)
+// is parsed for component keep-rules so the rename pass never renames a class the
+// manifest references by name.
+func protectModule(work, mod string, dexes []*zip.File, manifestFile *zip.File, pol policy.Policy, logf func(string, ...any)) (*engine.Result, []byte, error) {
 	root := filepath.Join(work, mod)
 	smaliDir := filepath.Join(root, "smali")
 	if err := os.MkdirAll(smaliDir, 0o755); err != nil {
@@ -135,6 +152,16 @@ func protectModule(work, mod string, dexes []*zip.File, pol policy.Policy) (*eng
 		}
 		if err := run("baksmali", "d", dexPath, "-o", smaliDir); err != nil {
 			return nil, nil, fmt.Errorf("baksmali disassemble: %w", err)
+		}
+	}
+
+	// Derive keep-rules from the protobuf manifest so renaming stays safe (#51).
+	if manifestFile != nil {
+		if keeps, err := manifestKeeps(manifestFile); err != nil {
+			logf("module %q: manifest keep-rules skipped: %v", mod, err)
+		} else if len(keeps) > 0 {
+			pol.Rename.KeepClasses = append(append([]string(nil), pol.Rename.KeepClasses...), keeps...)
+			logf("module %q: kept %d manifest components", mod, len(keeps))
 		}
 	}
 
@@ -212,6 +239,21 @@ func rewriteAAB(inPath, outPath string, sub map[string][]byte) error {
 		}
 	}
 	return zw.Close()
+}
+
+// manifestKeeps reads a protobuf AndroidManifest.xml zip entry and returns the
+// fully-qualified names of the components the rename pass must not touch.
+func manifestKeeps(f *zip.File) ([]string, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	return manifest.KeepClassesPB(b)
 }
 
 func extractZipFile(f *zip.File, dst string) error {

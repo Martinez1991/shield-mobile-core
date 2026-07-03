@@ -3,11 +3,42 @@ package apk
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"shield/internal/manifest"
 )
+
+// --- minimal protobuf encoders for a synthetic aapt XmlNode manifest ---
+
+func pbf(field int, b []byte) []byte {
+	out := binary.AppendUvarint(nil, uint64(field<<3|2))
+	out = binary.AppendUvarint(out, uint64(len(b)))
+	return append(out, b...)
+}
+func pbs(field int, s string) []byte { return pbf(field, []byte(s)) }
+func joinb(parts ...[]byte) []byte {
+	var out []byte
+	for _, p := range parts {
+		out = append(out, p...)
+	}
+	return out
+}
+func pbAttr(ns, name, val string) []byte { return joinb(pbs(1, ns), pbs(2, name), pbs(3, val)) }
+func pbElem(name string, attrs, kids [][]byte) []byte {
+	b := joinb(pbs(2, ""), pbs(3, name))
+	for _, a := range attrs {
+		b = append(b, pbf(4, a)...)
+	}
+	for _, k := range kids {
+		b = append(b, pbf(5, k)...)
+	}
+	return b
+}
+func pbNode(e []byte) []byte { return pbf(1, e) }
 
 // writeZip builds a zip file at path from name->content entries.
 func writeZip(t *testing.T, path string, entries map[string][]byte) {
@@ -97,6 +128,64 @@ func TestModuleOfDex(t *testing.T) {
 		if ok != c.ok || mod != c.mod {
 			t.Errorf("moduleOfDex(%q) = (%q,%v), want (%q,%v)", c.name, mod, ok, c.mod, c.ok)
 		}
+	}
+}
+
+func TestModuleOfManifest(t *testing.T) {
+	cases := []struct {
+		name, mod string
+		ok        bool
+	}{
+		{"base/manifest/AndroidManifest.xml", "base", true},
+		{"feature1/manifest/AndroidManifest.xml", "feature1", true},
+		{"base/dex/classes.dex", "", false},
+		{"base/manifest/other.xml", "", false},
+		{"BundleConfig.pb", "", false},
+	}
+	for _, c := range cases {
+		mod, ok := moduleOfManifest(c.name)
+		if ok != c.ok || mod != c.mod {
+			t.Errorf("moduleOfManifest(%q) = (%q,%v), want (%q,%v)", c.name, mod, ok, c.mod, c.ok)
+		}
+	}
+}
+
+func TestManifestKeepsFromZip(t *testing.T) {
+	ns := manifest.NS
+	act := pbNode(pbElem("activity", [][]byte{pbAttr(ns, "name", ".Main")}, nil))
+	app := pbNode(pbElem("application", [][]byte{pbAttr(ns, "name", ".App")}, [][]byte{act}))
+	man := pbNode(pbElem("manifest", [][]byte{pbAttr("", "package", "com.x")}, [][]byte{app}))
+
+	path := filepath.Join(t.TempDir(), "app.aab")
+	writeZip(t, path, map[string][]byte{
+		"base/manifest/AndroidManifest.xml": man,
+		"base/dex/classes.dex":              {1},
+	})
+
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	var mf *zip.File
+	for _, f := range zr.File {
+		if _, ok := moduleOfManifest(f.Name); ok {
+			mf = f
+		}
+	}
+	if mf == nil {
+		t.Fatal("manifest entry not found")
+	}
+	keeps, err := manifestKeeps(mf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, k := range keeps {
+		got[k] = true
+	}
+	if !got["com.x.App"] || !got["com.x.Main"] {
+		t.Errorf("keeps = %v, want com.x.App and com.x.Main", keeps)
 	}
 }
 
