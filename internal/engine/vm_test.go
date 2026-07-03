@@ -178,6 +178,93 @@ func TestVMNarrowingAndHigh16(t *testing.T) {
 	}
 }
 
+const vmPoly64 = `.method public static poly64(II)J
+    .registers 8
+    int-to-long v0, p0
+    int-to-long v2, p1
+    const-wide/16 v4, 0x1f
+    mul-long v0, v0, v4
+    add-long v0, v0, v2
+    return-wide v0
+.end method`
+
+const vmBits64 = `.method public static bits64(II)J
+    .registers 12
+    int-to-long v0, p0
+    int-to-long v2, p1
+    const-wide/16 v4, 0x64
+    mul-long v0, v0, v4
+    add-long v0, v0, v2
+    const-wide/16 v4, 0x7
+    div-long v6, v0, v4
+    rem-long v8, v0, v4
+    add-long v6, v6, v8
+    shl-long v6, v6, p1
+    return-wide v6
+.end method`
+
+func TestVMLong(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	poly := compileStr(t, vmPoly64, wire)
+	bits := compileStr(t, vmBits64, wire)
+
+	polyRef := func(a, b int32) int64 { return int64(a)*31 + int64(b) }
+	bitsRef := func(a, b int32) int64 {
+		x := int64(a)*100 + int64(b)
+		s := jdivL(x, 7) + jremL(x, 7)
+		return s << (uint(b) & 63)
+	}
+	for _, tc := range [][2]int32{{3, 4}, {-5, 10}, {100000, 7}, {0, 0}, {-1, 3}} {
+		if got := vmRun(poly, []int32{tc[0], tc[1]}, wire); got != polyRef(tc[0], tc[1]) {
+			t.Errorf("poly64(%d,%d) = %d, want %d", tc[0], tc[1], got, polyRef(tc[0], tc[1]))
+		}
+		if got := vmRun(bits, []int32{tc[0], tc[1]}, wire); got != bitsRef(tc[0], tc[1]) {
+			t.Errorf("bits64(%d,%d) = %d, want %d", tc[0], tc[1], got, bitsRef(tc[0], tc[1]))
+		}
+	}
+	// overflow: 100000*31 fits in long but not int -> proves 64-bit width.
+	if got := vmRun(poly, []int32{100000, 0}, wire); got != 3100000 {
+		t.Errorf("poly64(100000,0) = %d, want 3100000", got)
+	}
+}
+
+const vmWide = `.method public static wide(II)J
+    .registers 12
+    int-to-long v0, p0
+    int-to-long v2, p1
+    mul-long v4, v0, v2
+    and-long v6, v0, v2
+    add-long v4, v4, v6
+    or-long v6, v0, v2
+    add-long v4, v4, v6
+    xor-long v6, v0, v2
+    add-long v4, v4, v6
+    not-long v6, v2
+    add-long v4, v4, v6
+    move-wide v8, v4
+    neg-long v8, v8
+    sub-long v4, v4, v8
+    return-wide v4
+.end method`
+
+func TestVMWideAccumulate(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	code := compileStr(t, vmWide, wire)
+	ref := func(a, b int32) int64 {
+		A, B := int64(a), int64(b)
+		r := A*B + (A & B) + (A | B) + (A ^ B) + ^B
+		return r - (-r)
+	}
+	for _, tc := range [][2]int32{{100000, 100000}, {3, 4}, {-7, 11}, {0, 0}} {
+		if got := vmRun(code, []int32{tc[0], tc[1]}, wire); got != ref(tc[0], tc[1]) {
+			t.Errorf("wide(%d,%d) = %d, want %d", tc[0], tc[1], got, ref(tc[0], tc[1]))
+		}
+	}
+	if got := vmRun(code, []int32{100000, 100000}, wire); got != 20000199998 {
+		t.Errorf("wide(100000,100000) = %d, want 20000199998 (64-bit)", got)
+	}
+}
+
 func TestVMPermutationIsBijection(t *testing.T) {
 	for _, seed := range []int64{0, 1, 42, 0x5117e1d, -99} {
 		wire := vmPermutation(seed)
