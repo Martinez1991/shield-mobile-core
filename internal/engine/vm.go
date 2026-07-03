@@ -73,6 +73,27 @@ const (
 	opI2B // (byte)  sign-extend low 8
 	opI2S // (short) sign-extend low 16
 	opI2C // (char)  zero-extend low 16
+	// 64-bit long ops (issue #14). Wide values live in a parallel long register
+	// file indexed by the low register of the smali pair.
+	opConstWide // dest, imm64 (8 bytes)
+	opMoveWide  // dest, src
+	opAddL      // dest, a, b
+	opSubL
+	opMulL
+	opDivL
+	opRemL
+	opAndL
+	opOrL
+	opXorL
+	opShlL // dest, a, b(int reg)
+	opShrL
+	opUshrL
+	opNegL // dest, src
+	opNotL
+	opI2L     // destWide, srcInt
+	opL2I     // destInt, srcWide
+	opCmpLong // destInt, a, b (both wide)
+	opRetWide // src
 	opCount
 )
 
@@ -131,6 +152,12 @@ func imm4(v int64) []byte {
 	return b[:]
 }
 
+func imm8(v int64) []byte {
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], uint64(v))
+	return b[:]
+}
+
 // compileMethod returns the bytecode for a virtualizable method, or ok=false.
 // Supports straight-line integer ops plus branches/labels (issue #14) via a
 // two-pass layout that resolves label targets to absolute bytecode offsets.
@@ -141,7 +168,7 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		return nil, false
 	}
 	flags, params, ret := m[1], m[3], m[4]
-	if !strings.Contains(" "+flags, " static ") || ret != "I" {
+	if !strings.Contains(" "+flags, " static ") || (ret != "I" && ret != "J") {
 		return nil, false
 	}
 	nargs, ok := countIntParams(params)
@@ -244,6 +271,93 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 				return nil, false
 			}
 			push(vop{bytes: []byte{wire[unary[op]-1], d, s}})
+		// --- 64-bit long ops ---
+		case op == "const-wide/high16":
+			d, ok1 := reg(fields[1])
+			v, ok2 := parseLit(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: append([]byte{wire[opConstWide], d}, imm8(v<<48)...)})
+		case op == "const-wide" || op == "const-wide/16" || op == "const-wide/32":
+			d, ok1 := reg(fields[1])
+			v, ok2 := parseLit(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: append([]byte{wire[opConstWide], d}, imm8(v)...)})
+		case op == "move-wide" || op == "move-wide/from16" || op == "move-wide/16":
+			d, ok1 := reg(fields[1])
+			s, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[opMoveWide], d, s}})
+		case binL3[op] != 0:
+			d, ok1 := reg(fields[1])
+			a, ok2 := reg(fields[2])
+			b, ok3 := reg(fields[3])
+			if !ok1 || !ok2 || !ok3 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[binL3[op]-1], d, a, b}})
+		case binL2[op] != 0:
+			d, ok1 := reg(fields[1])
+			b, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[binL2[op]-1], d, d, b}})
+		case shiftL3[op] != 0:
+			d, ok1 := reg(fields[1])
+			a, ok2 := reg(fields[2])
+			b, ok3 := reg(fields[3]) // b is an INT register
+			if !ok1 || !ok2 || !ok3 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[shiftL3[op]-1], d, a, b}})
+		case shiftL2[op] != 0:
+			d, ok1 := reg(fields[1])
+			b, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[shiftL2[op]-1], d, d, b}})
+		case unaryL[op] != 0:
+			d, ok1 := reg(fields[1])
+			s, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[unaryL[op]-1], d, s}})
+		case op == "int-to-long":
+			d, ok1 := reg(fields[1])
+			s, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[opI2L], d, s}})
+		case op == "long-to-int":
+			d, ok1 := reg(fields[1])
+			s, ok2 := reg(fields[2])
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[opL2I], d, s}})
+		case op == "cmp-long":
+			d, ok1 := reg(fields[1])
+			a, ok2 := reg(fields[2])
+			b, ok3 := reg(fields[3])
+			if !ok1 || !ok2 || !ok3 {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[opCmpLong], d, a, b}})
+		case op == "return-wide":
+			s, ok := reg(fields[1])
+			if !ok {
+				return nil, false
+			}
+			push(vop{bytes: []byte{wire[opRetWide], s}})
 		case op == "return":
 			s, ok := reg(fields[1])
 			if !ok {
@@ -329,6 +443,25 @@ var unary = map[string]int{
 	"int-to-byte": opI2B + 1, "int-to-short": opI2S + 1, "int-to-char": opI2C + 1,
 }
 
+// long binops (3-addr and /2addr) on the wide register file.
+var binL3 = map[string]int{
+	"add-long": opAddL + 1, "sub-long": opSubL + 1, "mul-long": opMulL + 1,
+	"div-long": opDivL + 1, "rem-long": opRemL + 1,
+	"and-long": opAndL + 1, "or-long": opOrL + 1, "xor-long": opXorL + 1,
+}
+var binL2 = map[string]int{
+	"add-long/2addr": opAddL + 1, "sub-long/2addr": opSubL + 1, "mul-long/2addr": opMulL + 1,
+	"div-long/2addr": opDivL + 1, "rem-long/2addr": opRemL + 1,
+	"and-long/2addr": opAndL + 1, "or-long/2addr": opOrL + 1, "xor-long/2addr": opXorL + 1,
+}
+
+// long shifts: dest(wide), a(wide), b(INT). 3-addr and /2addr.
+var shiftL3 = map[string]int{"shl-long": opShlL + 1, "shr-long": opShrL + 1, "ushr-long": opUshrL + 1}
+var shiftL2 = map[string]int{"shl-long/2addr": opShlL + 1, "shr-long/2addr": opShrL + 1, "ushr-long/2addr": opUshrL + 1}
+
+// long unary (dest, src) both wide.
+var unaryL = map[string]int{"neg-long": opNegL + 1, "not-long": opNotL + 1}
+
 // litMap[op] = logical+1 for literal ALU ops (dest, src, imm).
 var litMap = map[string]int{
 	"add-int/lit8": opAddLit + 1, "add-int/lit16": opAddLit + 1,
@@ -362,17 +495,54 @@ func jrem(a, b int32) int32 {
 	return a % b
 }
 
-// vmExec is the Go reference interpreter (mirrors the injected smali VM.run).
-func vmExec(code []byte, args []int32, wire []byte) int32 {
+const minInt64 = -9223372036854775808
+
+func jdivL(a, b int64) int64 {
+	if b == 0 {
+		return 0
+	}
+	if a == minInt64 && b == -1 {
+		return a
+	}
+	return a / b
+}
+func jremL(a, b int64) int64 {
+	if b == 0 || (a == minInt64 && b == -1) {
+		return 0
+	}
+	return a % b
+}
+func cmp64(a, b int64) int32 {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// vmExec runs an int-returning method (mirrors the injected smali VM.run,
+// narrowed to int). Long-returning methods use vmRun directly.
+func vmExec(code []byte, args []int32, wire []byte) int32 { return int32(vmRun(code, args, wire)) }
+
+// vmRun is the Go reference interpreter. It returns a 64-bit long; the RET (int)
+// opcode returns the sign-extended int, RET_WIDE returns the full long. Wide
+// values live in a parallel long register file rw, so the int handlers (using r)
+// are unchanged.
+func vmRun(code []byte, args []int32, wire []byte) int64 {
 	inv := make([]int, opCount)
 	for logical, w := range wire {
 		inv[w] = logical
 	}
 	numRegs := int(code[0])
 	r := make([]int32, numRegs)
+	rw := make([]int64, numRegs)
 	pc := 1
 	rd := func() byte { b := code[pc]; pc++; return b }
 	imm := func() int32 { v := int32(binary.BigEndian.Uint32(code[pc:])); pc += 4; return v }
+	imm64 := func() int64 { v := int64(binary.BigEndian.Uint64(code[pc:])); pc += 8; return v }
 	rd16 := func() int { t := int(code[pc])<<8 | int(code[pc+1]); pc += 2; return t }
 	for pc < len(code) {
 		switch inv[code[pc]] {
@@ -496,10 +666,86 @@ func vmExec(code []byte, args []int32, wire []byte) int32 {
 			pc++
 			d, s := rd(), rd()
 			r[d] = int32(uint16(r[s]))
+		case opConstWide:
+			pc++
+			d := rd()
+			rw[d] = imm64()
+		case opMoveWide:
+			pc++
+			d, s := rd(), rd()
+			rw[d] = rw[s]
+		case opAddL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] + rw[b]
+		case opSubL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] - rw[b]
+		case opMulL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] * rw[b]
+		case opDivL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = jdivL(rw[a], rw[b])
+		case opRemL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = jremL(rw[a], rw[b])
+		case opAndL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] & rw[b]
+		case opOrL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] | rw[b]
+		case opXorL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] ^ rw[b]
+		case opShlL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] << (uint(r[b]) & 63)
+		case opShrL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = rw[a] >> (uint(r[b]) & 63)
+		case opUshrL:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			rw[d] = int64(uint64(rw[a]) >> (uint(r[b]) & 63))
+		case opNegL:
+			pc++
+			d, s := rd(), rd()
+			rw[d] = -rw[s]
+		case opNotL:
+			pc++
+			d, s := rd(), rd()
+			rw[d] = ^rw[s]
+		case opI2L:
+			pc++
+			d, s := rd(), rd()
+			rw[d] = int64(r[s])
+		case opL2I:
+			pc++
+			d, s := rd(), rd()
+			r[d] = int32(rw[s])
+		case opCmpLong:
+			pc++
+			d, a, b := rd(), rd(), rd()
+			r[d] = cmp64(rw[a], rw[b])
+		case opRetWide:
+			pc++
+			s := rd()
+			return rw[s]
 		case opRet:
 			pc++
 			s := rd()
-			return r[s]
+			return int64(r[s])
 		case opGoto:
 			pc++
 			pc = rd16()
@@ -690,9 +936,10 @@ func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64
 			if !ok {
 				return bk
 			}
-			nargs, _ := countIntParams(vmMethodDeclRE.FindStringSubmatch(bk[0])[3])
+			m := vmMethodDeclRE.FindStringSubmatch(bk[0])
+			nargs, _ := countIntParams(m[3])
 			count++
-			return virtualizedBody(bk[0], nargs, code)
+			return virtualizedBody(bk[0], nargs, code, m[4] == "J")
 		})
 	}
 	if count == 0 {

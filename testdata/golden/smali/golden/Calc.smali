@@ -58,3 +58,41 @@
     add-int v0, v0, v2
     return v0
 .end method
+
+# wide exercises 64-bit long ops (mul/and/or/xor/not/add/move/neg/sub-long, i2l,
+# return-wide). wide(100000,100000) overflows 32 bits, proving true 64-bit width.
+# = 2 * (A*B + (A&B) + (A|B) + (A^B) + ~B) = 20000000199998
+.method public static wide(II)J
+    .registers 12
+    int-to-long v0, p0
+    int-to-long v2, p1
+    mul-long v4, v0, v2
+    and-long v6, v0, v2
+    add-long v4, v4, v6
+    or-long v6, v0, v2
+    add-long v4, v4, v6
+    xor-long v6, v0, v2
+    add-long v4, v4, v6
+    not-long v6, v2
+    add-long v4, v4, v6
+    move-wide v8, v4
+    neg-long v8, v8
+    sub-long v4, v4, v8
+    return-wide v4
+.end method
+
+# wide2 exercises const-wide + div-long/rem-long + shl-long. wide2(3,4) = 736.
+.method public static wide2(II)J
+    .registers 10
+    int-to-long v0, p0
+    int-to-long v2, p1
+    const-wide/16 v4, 0x64
+    mul-long v0, v0, v4
+    add-long v0, v0, v2
+    const-wide/16 v4, 0x7
+    div-long v6, v0, v4
+    rem-long v8, v0, v4
+    add-long v6, v6, v8
+    shl-long v6, v6, p1
+    return-wide v6
+.end method

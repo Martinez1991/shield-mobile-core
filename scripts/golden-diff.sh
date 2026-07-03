@@ -58,7 +58,7 @@ PROT="$(run "$WORK/prot.dex")"
 echo "$PROT" | sed 's/^/   prot: /'
 
 # Sanity: the original must have produced the expected golden output.
-EXPECT=$'20\n10\ngolden-secret-42\n1\n100\n7\n22375'
+EXPECT=$'20\n10\ngolden-secret-42\n1\n100\n7\n22375\n20000199998\n736'
 if [ "$ORIG" != "$EXPECT" ]; then
   echo "GATE ERROR: original output unexpected (harness/env problem):" >&2
   echo "$ORIG" >&2
