@@ -37,11 +37,11 @@ func TestVMExecMatchesFormula(t *testing.T) {
 
 	// deterministic pseudo-inputs (no rand: keep tests reproducible)
 	for _, tc := range []struct{ a, b int32 }{{0, 0}, {1, 2}, {-3, 7}, {123, -456}, {1000, 1000}} {
-		if got := vmExec(sum, []int32{tc.a, tc.b}, wire); got != tc.a+tc.b {
+		if got := vmExec(sum, []int64{int64(tc.a), int64(tc.b)}, wire); got != tc.a+tc.b {
 			t.Errorf("sum2(%d,%d) = %d, want %d", tc.a, tc.b, got, tc.a+tc.b)
 		}
 		want := tc.a*tc.a + tc.b + 5
-		if got := vmExec(poly, []int32{tc.a, tc.b}, wire); got != want {
+		if got := vmExec(poly, []int64{int64(tc.a), int64(tc.b)}, wire); got != want {
 			t.Errorf("poly(%d,%d) = %d, want %d", tc.a, tc.b, got, want)
 		}
 	}
@@ -90,10 +90,10 @@ func TestVMBranches(t *testing.T) {
 		return 100
 	}
 	for _, n := range []int32{0, 1, 5, 10, 20, 50} {
-		if got := vmExec(sum, []int32{n}, wire); got != sumRef(n) {
+		if got := vmExec(sum, []int64{int64(n)}, wire); got != sumRef(n) {
 			t.Errorf("sum(%d) = %d, want %d", n, got, sumRef(n))
 		}
-		if got := vmExec(classify, []int32{n}, wire); got != classifyRef(n) {
+		if got := vmExec(classify, []int64{int64(n)}, wire); got != classifyRef(n) {
 			t.Errorf("classify(%d) = %d, want %d", n, got, classifyRef(n))
 		}
 	}
@@ -133,15 +133,15 @@ func TestVMExtendedIntOps(t *testing.T) {
 		return v0 & 0xf
 	}
 	for _, tc := range [][2]int32{{6, 2}, {13, 1}, {255, 3}, {1, 4}, {100, 5}} {
-		got := vmExec(bits, []int32{tc[0], tc[1]}, wire)
+		got := vmExec(bits, []int64{int64(tc[0]), int64(tc[1])}, wire)
 		want := ref(tc[0], tc[1])
 		if got != want {
 			t.Errorf("bits(%d,%d) = %d, want %d", tc[0], tc[1], got, want)
 		}
 	}
 	// spot-check the golden value used by the ART gate.
-	if vmExec(bits, []int32{6, 2}, wire) != 7 {
-		t.Errorf("bits(6,2) = %d, want 7", vmExec(bits, []int32{6, 2}, wire))
+	if vmExec(bits, []int64{6, 2}, wire) != 7 {
+		t.Errorf("bits(6,2) = %d, want 7", vmExec(bits, []int64{6, 2}, wire))
 	}
 }
 
@@ -169,12 +169,12 @@ func TestVMNarrowingAndHigh16(t *testing.T) {
 		return v0 + v1 + v2
 	}
 	for _, a := range []int32{0xabcd, 0x1234, 0x7f, 0x80, -1, 0} {
-		if got := vmExec(narrow, []int32{a}, wire); got != ref(a) {
+		if got := vmExec(narrow, []int64{int64(a)}, wire); got != ref(a) {
 			t.Errorf("narrow(%#x) = %d, want %d", a, got, ref(a))
 		}
 	}
-	if vmExec(narrow, []int32{0xabcd}, wire) != 22375 {
-		t.Errorf("narrow(0xABCD) = %d, want 22375", vmExec(narrow, []int32{0xabcd}, wire))
+	if vmExec(narrow, []int64{0xabcd}, wire) != 22375 {
+		t.Errorf("narrow(0xABCD) = %d, want 22375", vmExec(narrow, []int64{0xabcd}, wire))
 	}
 }
 
@@ -215,15 +215,15 @@ func TestVMLong(t *testing.T) {
 		return s << (uint(b) & 63)
 	}
 	for _, tc := range [][2]int32{{3, 4}, {-5, 10}, {100000, 7}, {0, 0}, {-1, 3}} {
-		if got := vmRun(poly, []int32{tc[0], tc[1]}, wire); got != polyRef(tc[0], tc[1]) {
+		if got := vmRun(poly, []int64{int64(tc[0]), int64(tc[1])}, wire); got != polyRef(tc[0], tc[1]) {
 			t.Errorf("poly64(%d,%d) = %d, want %d", tc[0], tc[1], got, polyRef(tc[0], tc[1]))
 		}
-		if got := vmRun(bits, []int32{tc[0], tc[1]}, wire); got != bitsRef(tc[0], tc[1]) {
+		if got := vmRun(bits, []int64{int64(tc[0]), int64(tc[1])}, wire); got != bitsRef(tc[0], tc[1]) {
 			t.Errorf("bits64(%d,%d) = %d, want %d", tc[0], tc[1], got, bitsRef(tc[0], tc[1]))
 		}
 	}
 	// overflow: 100000*31 fits in long but not int -> proves 64-bit width.
-	if got := vmRun(poly, []int32{100000, 0}, wire); got != 3100000 {
+	if got := vmRun(poly, []int64{100000, 0}, wire); got != 3100000 {
 		t.Errorf("poly64(100000,0) = %d, want 3100000", got)
 	}
 }
@@ -256,12 +256,40 @@ func TestVMWideAccumulate(t *testing.T) {
 		return r - (-r)
 	}
 	for _, tc := range [][2]int32{{100000, 100000}, {3, 4}, {-7, 11}, {0, 0}} {
-		if got := vmRun(code, []int32{tc[0], tc[1]}, wire); got != ref(tc[0], tc[1]) {
+		if got := vmRun(code, []int64{int64(tc[0]), int64(tc[1])}, wire); got != ref(tc[0], tc[1]) {
 			t.Errorf("wide(%d,%d) = %d, want %d", tc[0], tc[1], got, ref(tc[0], tc[1]))
 		}
 	}
-	if got := vmRun(code, []int32{100000, 100000}, wire); got != 20000199998 {
+	if got := vmRun(code, []int64{100000, 100000}, wire); got != 20000199998 {
 		t.Errorf("wide(100000,100000) = %d, want 20000199998 (64-bit)", got)
+	}
+}
+
+const vmCombine = `.method public static combine(JI)J
+    .registers 8
+    int-to-long v0, p2
+    add-long v0, p0, v0
+    const-wide/16 v2, 0x2
+    mul-long v0, v0, v2
+    return-wide v0
+.end method`
+
+func TestVMLongParam(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	code := compileStr(t, vmCombine, wire)
+	ref := func(a int64, b int32) int64 { return (a + int64(b)) * 2 }
+	cases := []struct {
+		a int64
+		b int32
+	}{{5000000000, 5}, {0, 0}, {-3, 7}, {1 << 40, -1}}
+	for _, c := range cases {
+		// args: long param in slot 0, int param in slot 1 (one slot per param).
+		if got := vmRun(code, []int64{c.a, int64(c.b)}, wire); got != ref(c.a, c.b) {
+			t.Errorf("combine(%d,%d) = %d, want %d", c.a, c.b, got, ref(c.a, c.b))
+		}
+	}
+	if got := vmRun(code, []int64{5000000000, 5}, wire); got != 10000000010 {
+		t.Errorf("combine(5e9,5) = %d, want 10000000010", got)
 	}
 }
 
@@ -305,7 +333,7 @@ func TestVMDumpVector(t *testing.T) {
 	sb.WriteString(hexBytes(code) + "\n")
 	for _, tc := range [][2]int32{{6, 2}, {13, 1}, {255, 3}, {1, 4}} {
 		sb.WriteString(strconv.Itoa(int(tc[0])) + " " + strconv.Itoa(int(tc[1])) + " " +
-			strconv.Itoa(int(vmExec(code, []int32{tc[0], tc[1]}, wire))) + "\n")
+			strconv.Itoa(int(vmExec(code, []int64{int64(tc[0]), int64(tc[1])}, wire))) + "\n")
 	}
 	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
 		t.Fatal(err)

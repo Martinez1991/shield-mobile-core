@@ -64,11 +64,12 @@ func TestVMAssembles(t *testing.T) {
 	}
 
 	dir := t.TempDir()
+	pinfos, _, _ := parseParams("II")
 	// virtualized class
 	host := &smali.Class{
 		Descriptor: "Lcom/x/Y;",
 		Lines: append([]string{".class public Lcom/x/Y;", ".super Ljava/lang/Object;", ""},
-			virtualizedBody(".method public static poly(II)I", 2, code, false)...),
+			virtualizedBody(".method public static poly(II)I", pinfos, code, false)...),
 	}
 	writeClass(t, dir, "com/x/Y.smali", host.Lines)
 	vm := VMClass(dir, wire)

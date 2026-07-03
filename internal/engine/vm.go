@@ -90,10 +90,11 @@ const (
 	opUshrL
 	opNegL // dest, src
 	opNotL
-	opI2L     // destWide, srcInt
-	opL2I     // destInt, srcWide
-	opCmpLong // destInt, a, b (both wide)
-	opRetWide // src
+	opI2L         // destWide, srcInt
+	opL2I         // destInt, srcWide
+	opCmpLong     // destInt, a, b (both wide)
+	opRetWide     // src
+	opLoadArgWide // destWide, argIdx (long param)
 	opCount
 )
 
@@ -171,8 +172,8 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 	if !strings.Contains(" "+flags, " static ") || (ret != "I" && ret != "J") {
 		return nil, false
 	}
-	nargs, ok := countIntParams(params)
-	if !ok || nargs == 0 {
+	pinfos, regWidth, ok := parseParams(params)
+	if !ok || len(pinfos) == 0 {
 		return nil, false
 	}
 	regKind, regCount, ok := findRegs(block)
@@ -180,9 +181,9 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		return nil, false
 	}
 	numRegs := regCount
-	paramBase := regCount - nargs
+	paramBase := regCount - regWidth
 	if regKind == "locals" {
-		numRegs = regCount + nargs
+		numRegs = regCount + regWidth
 		paramBase = regCount
 	}
 	if numRegs <= 0 || numRegs > 255 || paramBase < 0 {
@@ -207,9 +208,14 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		ops = append(ops, v)
 	}
 
-	// pass 1a: arg loaders
-	for i := 0; i < nargs; i++ {
-		push(vop{bytes: []byte{wire[opLoadArg], byte(paramBase + i), byte(i)}})
+	// pass 1a: arg loaders (one slot per param; long args go to the wide file)
+	for i, pi := range pinfos {
+		dest := byte(paramBase + pi.regOff)
+		if pi.isLong {
+			push(vop{bytes: []byte{wire[opLoadArgWide], dest, byte(i)}})
+		} else {
+			push(vop{bytes: []byte{wire[opLoadArg], dest, byte(i)}})
+		}
 	}
 
 	body := methodBody(block)
@@ -525,13 +531,14 @@ func cmp64(a, b int64) int32 {
 
 // vmExec runs an int-returning method (mirrors the injected smali VM.run,
 // narrowed to int). Long-returning methods use vmRun directly.
-func vmExec(code []byte, args []int32, wire []byte) int32 { return int32(vmRun(code, args, wire)) }
+func vmExec(code []byte, args []int64, wire []byte) int32 { return int32(vmRun(code, args, wire)) }
 
-// vmRun is the Go reference interpreter. It returns a 64-bit long; the RET (int)
-// opcode returns the sign-extended int, RET_WIDE returns the full long. Wide
-// values live in a parallel long register file rw, so the int handlers (using r)
-// are unchanged.
-func vmRun(code []byte, args []int32, wire []byte) int64 {
+// vmRun is the Go reference interpreter. Args are int64 (one slot per param;
+// int params are sign-extended). It returns a 64-bit long; the RET (int) opcode
+// returns the sign-extended int, RET_WIDE returns the full long. Wide values
+// live in a parallel long register file rw, so the int handlers (using r) are
+// unchanged.
+func vmRun(code []byte, args []int64, wire []byte) int64 {
 	inv := make([]int, opCount)
 	for logical, w := range wire {
 		inv[w] = logical
@@ -549,7 +556,11 @@ func vmRun(code []byte, args []int32, wire []byte) int64 {
 		case opLoadArg:
 			pc++
 			d, ai := rd(), rd()
-			r[d] = args[ai]
+			r[d] = int32(args[ai])
+		case opLoadArgWide:
+			pc++
+			d, ai := rd(), rd()
+			rw[d] = args[ai]
 		case opConst:
 			pc++
 			d := rd()
@@ -843,6 +854,32 @@ func countIntParams(params string) (int, bool) {
 	return n, true
 }
 
+// paramInfo describes one method parameter for the wide-aware register layout.
+type paramInfo struct {
+	isLong bool
+	regOff int // register offset from paramBase (int=1, long=2 slots)
+}
+
+// parseParams accepts int (I) and long (J) parameters, returning per-param info
+// and the total register width. Bails on any other type (objects/arrays/etc.).
+func parseParams(params string) ([]paramInfo, int, bool) {
+	var out []paramInfo
+	off := 0
+	for i := 0; i < len(params); i++ {
+		switch params[i] {
+		case 'I':
+			out = append(out, paramInfo{false, off})
+			off++
+		case 'J':
+			out = append(out, paramInfo{true, off})
+			off += 2
+		default:
+			return nil, 0, false
+		}
+	}
+	return out, off, true
+}
+
 func findRegs(block []string) (string, int, bool) {
 	for _, ln := range block {
 		if m := vmRegsRE.FindStringSubmatch(ln); m != nil {
@@ -937,9 +974,9 @@ func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64
 				return bk
 			}
 			m := vmMethodDeclRE.FindStringSubmatch(bk[0])
-			nargs, _ := countIntParams(m[3])
+			pinfos, _, _ := parseParams(m[3])
 			count++
-			return virtualizedBody(bk[0], nargs, code, m[4] == "J")
+			return virtualizedBody(bk[0], pinfos, code, m[4] == "J")
 		})
 	}
 	if count == 0 {

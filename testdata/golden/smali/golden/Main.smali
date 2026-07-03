@@ -58,5 +58,11 @@
     move-result-wide v1
     invoke-virtual {v0, v1, v2}, Ljava/io/PrintStream;->println(J)V
 
+    const-wide v1, 0x12a05f200L
+    const/4 v3, 0x5
+    invoke-static {v1, v2, v3}, Lgolden/Calc;->combine(JI)J
+    move-result-wide v1
+    invoke-virtual {v0, v1, v2}, Ljava/io/PrintStream;->println(J)V
+
     return-void
 .end method

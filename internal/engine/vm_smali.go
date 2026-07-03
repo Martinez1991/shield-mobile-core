@@ -8,23 +8,38 @@ import (
 )
 
 // virtualizedBody replaces a compiled method's body with a call to the VM: it
-// packs the int args into an int[], embeds the bytecode as a byte[] payload and
-// invokes Lshield/rt/VM;->run (which returns a long). wideRet marks a
-// long-returning method (return-wide); otherwise the long is narrowed to int.
-func virtualizedBody(decl string, nargs int, code []byte, wideRet bool) []string {
+// packs the args into a long[] (one slot per param; int params widened, long
+// params stored directly), embeds the bytecode as a byte[] payload and invokes
+// Lshield/rt/VM;->run (which returns a long). wideRet marks a long-returning
+// method (return-wide); otherwise the long is narrowed to int.
+func virtualizedBody(decl string, pinfos []paramInfo, code []byte, wideRet bool) []string {
+	regWidth := 0
+	for _, pi := range pinfos {
+		if pi.isLong {
+			regWidth = pi.regOff + 2
+		} else {
+			regWidth = pi.regOff + 1
+		}
+	}
 	var b []string
 	b = append(b, decl)
-	b = append(b, fmt.Sprintf("    .registers %d", nargs+4))
-	b = append(b, fmt.Sprintf("    const/16 v0, 0x%x", nargs))
-	b = append(b, "    new-array v0, v0, [I")
-	for i := 0; i < nargs; i++ {
+	// locals: v0 args, v1 index/bc, v2:v3 wide temp + run result.
+	b = append(b, fmt.Sprintf("    .registers %d", 4+regWidth))
+	b = append(b, fmt.Sprintf("    const/16 v0, 0x%x", len(pinfos)))
+	b = append(b, "    new-array v0, v0, [J")
+	for i, pi := range pinfos {
 		b = append(b, fmt.Sprintf("    const/16 v1, 0x%x", i))
-		b = append(b, fmt.Sprintf("    aput p%d, v0, v1", i))
+		if pi.isLong {
+			b = append(b, fmt.Sprintf("    aput-wide p%d, v0, v1", pi.regOff))
+		} else {
+			b = append(b, fmt.Sprintf("    int-to-long v2, p%d", pi.regOff))
+			b = append(b, "    aput-wide v2, v0, v1")
+		}
 	}
 	b = append(b, fmt.Sprintf("    const/16 v1, 0x%x", len(code)))
 	b = append(b, "    new-array v1, v1, [B")
 	b = append(b, "    fill-array-data v1, :vmbc")
-	b = append(b, "    invoke-static {v1, v0}, Lshield/rt/VM;->run([B[I)J")
+	b = append(b, "    invoke-static {v1, v0}, Lshield/rt/VM;->run([B[J)J")
 	b = append(b, "    move-result-wide v2")
 	if wideRet {
 		b = append(b, "    return-wide v2")
@@ -110,24 +125,30 @@ func VMClass(base string, wire []byte) *smali.Class {
 	p("    return-wide v0")
 	p(".end method")
 	p("")
-	// run: the fetch/decode/dispatch loop. Returns long: RET (int) sign-extends,
-	// RET_WIDE returns the full long. r=int registers, v10=rw long registers.
-	p(".method public static run([B[I)J")
+	// run: the fetch/decode/dispatch loop. args (p1) is a long[] (one slot per
+	// param). Returns long: RET (int) sign-extends, RET_WIDE returns the full
+	// long. r=int registers, v10=rw long registers.
+	p(".method public static run([B[J)J")
 	p("    .locals 18")
+	// p0 ([B bytecode) and p1 ([J args) sit at v18/v19 (locals+params), out of
+	// reach of aget/invoke (formats 23x/35c cap at v15). Relocate the bytecode to
+	// the free low register v11 via move-object/16 (format 32x reaches v18); the
+	// args array is copied on demand inside the two LOADARG handlers.
+	p("    move-object/16 v11, p0")
 	p("    const/4 v0, 0x0")
-	p("    aget-byte v1, p0, v0")
+	p("    aget-byte v1, v11, v0")
 	p("    and-int/lit16 v1, v1, 0xff")
 	p("    new-array v2, v1, [I")
 	p("    new-array v10, v1, [J")
 	p("    const/4 v3, 0x1")
 	p("    :loop")
-	p("    aget-byte v4, p0, v3")
+	p("    aget-byte v4, v11, v3")
 	p("    and-int/lit16 v4, v4, 0xff")
 	p("    add-int/lit8 v3, v3, 0x1")
 
 	// helper emitters
 	readByte := func(dest string) {
-		p("    aget-byte %s, p0, v3", dest)
+		p("    aget-byte %s, v11, v3", dest)
 		p("    and-int/lit16 %s, %s, 0xff", dest, dest)
 		p("    add-int/lit8 v3, v3, 0x1")
 	}
@@ -135,23 +156,39 @@ func VMClass(base string, wire []byte) *smali.Class {
 	next := 0
 	label := func() string { next++; return fmt.Sprintf(":h%d", next) }
 
-	// LOADARG dest, argIdx
+	// LOADARG dest, argIdx (int): read the long slot and narrow to int
 	l := label()
 	p("    const/16 v5, 0x%x", w(opLoadArg))
 	p("    if-ne v4, v5, %s", l)
 	readByte("v6")
 	readByte("v7")
-	p("    aget v8, p1, v7")
+	p("    move-object/16 v9, p1")
+	p("    aget-wide v12, v9, v7")
+	p("    long-to-int v8, v12")
 	p("    aput v8, v2, v6")
 	p("    goto :loop")
 	p("    %s", l)
+
+	// LOADARG_WIDE dest, argIdx (long): read the long slot into rw
+	{
+		lw := label()
+		p("    const/16 v5, 0x%x", w(opLoadArgWide))
+		p("    if-ne v4, v5, %s", lw)
+		readByte("v6")
+		readByte("v7")
+		p("    move-object/16 v9, p1")
+		p("    aget-wide v12, v9, v7")
+		p("    aput-wide v12, v10, v6")
+		p("    goto :loop")
+		p("    %s", lw)
+	}
 
 	// CONST dest, imm32
 	l = label()
 	p("    const/16 v5, 0x%x", w(opConst))
 	p("    if-ne v4, v5, %s", l)
 	readByte("v6")
-	p("    invoke-static {p0, v3}, Lshield/rt/VM;->i4([BI)I")
+	p("    invoke-static {v11, v3}, Lshield/rt/VM;->i4([BI)I")
 	p("    move-result v7")
 	p("    add-int/lit8 v3, v3, 0x4")
 	p("    aput v7, v2, v6")
@@ -279,7 +316,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    const/16 v5, 0x%x", w(opConstWide))
 		p("    if-ne v4, v5, %s", l)
 		readByte("v6")
-		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i8([BI)J")
+		p("    invoke-static {v11, v3}, Lshield/rt/VM;->i8([BI)J")
 		p("    move-result-wide v12")
 		p("    add-int/lit8 v3, v3, 0x8")
 		p("    aput-wide v12, v10, v6")
@@ -362,7 +399,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    if-ne v4, v5, %s", l)
 		readByte("v6") // dest
 		readByte("v7") // src
-		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i4([BI)I")
+		p("    invoke-static {v11, v3}, Lshield/rt/VM;->i4([BI)I")
 		p("    move-result v8")
 		p("    add-int/lit8 v3, v3, 0x4")
 		p("    aget v9, v2, v7")
@@ -389,7 +426,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    if-ne v4, v5, %s", l)
 		readByte("v6") // dest
 		readByte("v7") // src
-		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i4([BI)I")
+		p("    invoke-static {v11, v3}, Lshield/rt/VM;->i4([BI)I")
 		p("    move-result v8") // imm
 		p("    add-int/lit8 v3, v3, 0x4")
 		p("    aget v9, v2, v7")
@@ -404,7 +441,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 		l := label()
 		p("    const/16 v5, 0x%x", w(opGoto))
 		p("    if-ne v4, v5, %s", l)
-		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i2([BI)I")
+		p("    invoke-static {v11, v3}, Lshield/rt/VM;->i2([BI)I")
 		p("    move-result v3")
 		p("    goto :loop")
 		p("    %s", l)
@@ -417,7 +454,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    if-ne v4, v5, %s", l)
 		readByte("v6") // a
 		readByte("v7") // b
-		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i2([BI)I")
+		p("    invoke-static {v11, v3}, Lshield/rt/VM;->i2([BI)I")
 		p("    move-result v8") // target
 		p("    add-int/lit8 v3, v3, 0x2")
 		p("    aget v9, v2, v6")
@@ -443,7 +480,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    const/16 v5, 0x%x", w(op))
 		p("    if-ne v4, v5, %s", l)
 		readByte("v6") // a
-		p("    invoke-static {p0, v3}, Lshield/rt/VM;->i2([BI)I")
+		p("    invoke-static {v11, v3}, Lshield/rt/VM;->i2([BI)I")
 		p("    move-result v8") // target
 		p("    add-int/lit8 v3, v3, 0x2")
 		p("    aget v9, v2, v6")

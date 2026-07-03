@@ -96,3 +96,14 @@
     shl-long v6, v6, p1
     return-wide v6
 .end method
+
+# combine takes a LONG parameter (p0) plus an int (p2, since the long occupies
+# two param registers). combine(5000000000, 5) = (a + b) * 2 = 10000000010.
+.method public static combine(JI)J
+    .registers 8
+    int-to-long v0, p2
+    add-long v0, p0, v0
+    const-wide/16 v2, 0x2
+    mul-long v0, v0, v2
+    return-wide v0
+.end method
