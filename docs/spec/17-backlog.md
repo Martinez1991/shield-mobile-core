@@ -51,8 +51,13 @@ Hierarquia: **Epic → Feature → User Story → Task/Subtask**. Estimativa em 
 |----|------|----------|
 | RF-008 corretude | E1 | #3, #4, #5, #8, #10 |
 | RF-011 assinatura | E3 | #6 |
-| RF-010 RASP | E5 | #11 |
-| RF-009 VM | E10 | #14, #20 |
+| RF-010 RASP | E5 | #11; **#54 ingest de campo ✅** |
+| RF-009 VM | E10 | **#14 ✅, #20 ✅** (IR tipada + flattening + invoke); follow-ups #48–#50 ✅ |
+| RF-016 AAB | — | **#16 ✅, #51 ✅** (keep-rules protobuf) |
+| RF-018 worker/fila | — | **#18 ✅** (NATS #52 ✅) |
 | RF-017 CI/CD | E7 | #7 |
+| RF-014 observabilidade | — | **#21 ✅** (OTLP #53 ✅) |
 | RF-020 dashboard | E6 | (a criar) |
 | RF-012 IA | E8 | (a criar) |
+
+> **✅ Entregue em v0.2.0.** O épico **E10 (VM & flattening)**, planejado para V3, foi antecipado: IR tipada Go-native, flattening com dispatcher central e invoke data-driven, todos verificados em ART real. Ver [§16 Roadmap → Estado atual](16-roadmap.md#estado-atual--v020-entregue).

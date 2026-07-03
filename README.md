@@ -1,8 +1,11 @@
-# SHIELD — Engine de Ofuscação (MVP)
+# SHIELD — Engine de Ofuscação + Plataforma (v0.2.0)
 
 Ferramenta de ofuscação de código Android que implementa o **Engine de Ofuscação**
-(Seção 3 de [`shield-platform.md`](shield-platform.md)) como uma CLI real, escrita em
-**Go puro (stdlib, zero dependências)**.
+(Seção 3 de [`shield-platform.md`](shield-platform.md)) como uma CLI real. O **engine
+é Go puro (stdlib, zero dependências) e determinístico**; as duas dependências externas
+introduzidas (NATS para fila, OpenTelemetry para tracing) ficam **confinadas aos pacotes
+de plataforma** (`internal/queue`, `internal/obs`) e nunca são alcançadas pelo engine —
+ver [ADR 0002](docs/adr/0002-nats-queue.md)/[0003](docs/adr/0003-otlp-tracing.md).
 
 A engine opera sobre **Smali** — a representação editável de bytecode Dalvik produzida
 por `baksmali`/`apktool` — usada como uma **SHIELD-IR simplificada** (doc §2.2 estágios
@@ -62,15 +65,26 @@ Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` 
 | §3.5 | **Metadata Removal** | ✅ | Remove `.line`, `.local`, `.prologue`, `.source` (debug info). |
 | §3.3 | **String Encryption** | ✅ | XOR (low-risk) **ou AES-256-GCM** com chave derivada em runtime (`key=SHA-256(material)`, nunca literal); decryptor `Lshield/rt/SH;` injetado. |
 | §6 | **RASP (runtime)** | ✅ | Injeta `Lshield/rt/RASP;`: detecção de root/debugger/emulador/**Xposed**/**Frida** + `flags()` bitmask + primitiva `react()` (§6.1). **Auto-ofuscado**: injetado antes dos passes, então suas assinaturas (`su`, `frida`, Build) são cifradas e o control-flow embaralhado (API pública estável). |
-| §8 | **Code Virtualization (VM)** | ✅ int + branches | Compila métodos `static` inteiros (aritmética **e fluxo de controle**: `if`/loops via goto/if-cmp) para **bytecode próprio** interpretado por `Lshield/rt/VM;` (fetch/decode/dispatch, targets absolutos), com **opcodes embaralhados por build** (§8.1). Objetos/chamadas → roadmap. |
+| §8 | **Code Virtualization (VM)** | ✅ | Compila métodos `static` para **bytecode próprio** interpretado por `Lshield/rt/VM;` (fetch/decode/dispatch, opcodes embaralhados por build, §8.1). Cobre aritmética **int e long/64-bit**, branches/loops, narrowing, **objetos** (params/`move-object`/`return-object`), **const-string** (pool virtualizado), e **`invoke` data-driven** por reflexão (`static`/`virtual`/`interface`; args e retornos int/long/objeto). Tudo verificado byte-a-byte em **ART real** ([#14](https://github.com/Martinez1991/shield-platform/issues/14)). |
 | §3.1 | **Class/Type Renaming** | ✅ | Renomeia classes/tipos *reachability-aware*; **keep-rules automáticas do AndroidManifest.xml** (Activities/Services/Providers/Receivers nunca renomeados), reescreve referências, gera `mapping.txt`. |
 | §3.1 | **Member Renaming** | ✅ | Renomeia métodos `private`/`static` e campos `private` (nunca vtable/overrides); enums e classes kept preservados. |
 | §3.2 | **Opaque predicates** | ✅ | Predicados always-true + fake branches, *verifier-safe* (reusa registrador local livre no entry, sem realocação). |
-| §7 | **Block Reordering** | ✅ | Embaralha basic blocks e reconecta com `goto` (*flattening* de layout, seguro por construção: ordem de execução e tipos preservados). Dispatcher central + ISA polimórfica → roadmap. |
+| §7 | **Block Reordering** | ✅ | Embaralha basic blocks e reconecta com `goto` (*flattening* de layout, seguro por construção). |
+| §3.2/8 | **Control-Flow Flattening** | ✅ | Dispatcher central `packed-switch`: cada bloco vira um case dirigido por um registrador de estado. Dirigido pela **IR tipada** ([ADR 0001](docs/adr/0001-typed-ir.md)) — gate de consistência de tipos (inferência) + registrador de estado morto (liveness), garantindo zero conflito no verificador. Verificado em ART ([#20](https://github.com/Martinez1991/shield-platform/issues/20)). |
 | §3.2 | **Junk code** | ✅ | Padding com `nop` no início dos métodos. |
 | §9.1 | **Detecção de código sensível** | ✅ (heurística) | Regex (Stripe/AWS/JWT/GCP/private key) + entropia de Shannon. |
 | P2 | **Determinismo** | ✅ | Mesmo input + policy + seed ⇒ output idêntico (testado). |
 | P4 | **Policy-as-Code** | ✅ | Policy JSON versionável + presets + validação. |
+
+### Plataforma (v0.2.0)
+
+| Capacidade | Status | Notas |
+|-----------|--------|-------|
+| **IR tipada** (`internal/ir`) | ✅ | Parser estruturado + inferência de tipos + liveness ([ADR 0001](docs/adr/0001-typed-ir.md)); base do flattening e do invoke da VM. |
+| **AAB / App Bundle** | ✅ | Round-trip de bundle (`shield protect app.aab`) preservando entries byte-a-byte; **keep-rules do manifesto protobuf** (parser aapt2 hand-rolled). |
+| **Worker sandboxed + fila** | ✅ | `cmd/shield-worker` consome `queue.Queue` (Mem/Dir/**NATS JetStream**); deploy gVisor + no-egress + **KEDA** por profundidade de fila ([`deploy/`](deploy/)). |
+| **Observabilidade** | ✅ | Métricas Prometheus por estágio + spans **OTLP** (opt-in); dashboards/alertas Grafana ([`deploy/observability/`](deploy/observability/)). |
+| **Ingest RASP em campo** | ✅ | `cmd/rasp-ingest`: callbacks HMAC por-tenant + anti-replay → métricas de tamper por tenant/tipo. |
 
 ### Validação de round-trip (DEX real)
 

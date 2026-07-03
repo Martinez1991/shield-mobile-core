@@ -10,6 +10,19 @@
 | **V3** | 12–18 meses | Diferenciação premium | VM polimórfica ampliada (fluxo de controle), proteção adaptativa por IA em produção, self-modifying/runtime codegen, ARM64/RISC-V, IR tipada (dexlib2/LLVM) |
 | **Enterprise** | 18–24 meses | On-prem/híbrido + compliance | Air-gapped, HSM PKCS#11, hybrid runners, SLSA L3, SOC2/ISO 27001, SLAs, feeds contínuos |
 
+## Estado atual — v0.2.0 (entregue)
+
+Além do MVP (v0.1.0: engine rename/strings/control-flow, gate de corretude golden/ART, keep-rules de manifesto, RASP básico, CLI), a **v0.2.0** adiantou capacidades de V1 e V3:
+
+- **IR tipada Go-native** (`internal/ir`, [ADR 0001](../adr/0001-typed-ir.md)) — parser estruturado + inferência de tipos + liveness. Não dexlib2; engine segue puro-Go/zero-deps.
+- **VM ampliada** (fecha [#14](https://github.com/Martinez1991/shield-platform/issues/14)/[#20](https://github.com/Martinez1991/shield-platform/issues/20)) — branches, ALU int/long, narrowing, objetos, const-string virtualizado, **control-flow flattening** (dispatcher central), e **invoke data-driven** (static/virtual/interface; args e retornos int/long/objeto) — tudo verificado byte-a-byte em ART real.
+- **AAB / split** ([#16](https://github.com/Martinez1991/shield-platform/issues/16)) — round-trip de bundle + keep-rules do manifesto protobuf ([#51](https://github.com/Martinez1991/shield-platform/issues/51), parser hand-rolled).
+- **Worker sandboxed + fila + autoscaling** ([#18](https://github.com/Martinez1991/shield-platform/issues/18), [ADR 0002](../adr/0002-nats-queue.md)) — `queue.Queue` (Mem/Dir/NATS JetStream), gVisor + no-egress + KEDA.
+- **Observabilidade** ([#21](https://github.com/Martinez1991/shield-platform/issues/21), [ADR 0003](../adr/0003-otlp-tracing.md)) — métricas Prometheus por estágio, spans OTel export via OTLP, dashboards/alertas Grafana.
+- **Ingest de callbacks RASP em campo** ([#54](https://github.com/Martinez1991/shield-platform/issues/54)) — `cmd/rasp-ingest`, HMAC por-tenant + anti-replay.
+
+> Duas dependências externas foram introduzidas de forma disciplinada (NATS, OTel), confinadas a um pacote; o **núcleo do engine permanece stdlib-only e determinístico**.
+
 ## Marcos de qualidade
 - **M1 (fim MVP):** UX ≥ 7/10; corretude 100% golden apps; nota geral do committee ≥ 6.
 - **M2 (fim V1):** SLA 99.9% control plane; SCA/SAST sem high; SBOM por release.

@@ -10,7 +10,7 @@
 | Leitura/Escrita | **CQRS leve** no build/telemetria (event-sourcing no `job-svc`) | Reconstrução de histórico/auditoria; retry idempotente |
 | Dashboard | **BFF + GraphQL** | Queries compostas, evita over-fetching |
 
-> **Nota (débito estruturante):** a "SHIELD-IR" atual é smali-texto (regex). O alvo é **IR tipada (dexlib2/LLVM)** com análise de tipos/liveness — pré-requisito para flattening real e VM de fluxo (ver [issue #20](https://github.com/Martinez1991/shield-platform/issues/20), ADR-0005).
+> **Nota (débito estruturante — RESOLVIDO em v0.2.0):** a "SHIELD-IR" era smali-texto (regex). Foi introduzida uma **IR tipada Go-native** (`internal/ir`) — parser estruturado + inferência de tipos + liveness, decisão em [ADR 0001](../adr/0001-typed-ir.md) (**não** dexlib2, para manter o engine puro-Go/zero-deps/determinístico). Ela destravou **control-flow flattening** com dispatcher central e **invoke data-driven** na VM, ambos verificados em ART real ([#20](https://github.com/Martinez1991/shield-platform/issues/20) e [#14](https://github.com/Martinez1991/shield-platform/issues/14), fechados).
 
 ## Planos lógicos
 

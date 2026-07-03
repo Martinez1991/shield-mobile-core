@@ -2,6 +2,8 @@
 
 Três pilares + um quarto específico do domínio: **observabilidade da proteção** (P7).
 
+> **Implementado em v0.2.0** ([#21](https://github.com/Martinez1991/shield-platform/issues/21)/[#53](https://github.com/Martinez1991/shield-platform/issues/53)/[#54](https://github.com/Martinez1991/shield-platform/issues/54)): `internal/obs` expõe métricas Prometheus por estágio do pipeline (`shield_stage_duration_seconds`, `shield_builds_total`, `shield_queue_depth`) **sem a client lib** (text-exposition hand-rolled), spans por pass exportáveis via **OTLP** ([ADR 0003](../adr/0003-otlp-tracing.md), opt-in `--otlp-endpoint`), e `cmd/rasp-ingest` recebe callbacks de campo (`shield_rasp_events_total`/`_rejected_total`). Dashboards/alertas Grafana e config Prometheus em [`deploy/observability/`](../../deploy/observability/).
+
 ## Stack
 | Pilar | Ferramenta | Notas |
 |-------|-----------|-------|
