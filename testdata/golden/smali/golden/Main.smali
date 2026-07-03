@@ -98,5 +98,11 @@
     move-result v1
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
 
+    const/16 v1, 0x2a
+    const/4 v2, 0x7
+    invoke-static {v1, v2}, Lgolden/Logic;->maxOf(II)I
+    move-result v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
+
     return-void
 .end method

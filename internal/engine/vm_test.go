@@ -23,7 +23,7 @@ const vmPoly = `.method public static poly(II)I
 
 func compileStr(t *testing.T, src string, wire []byte) []byte {
 	t.Helper()
-	code, _, ok := compileMethod(strings.Split(src, "\n"), wire)
+	code, _, ok := compileMethod(strings.Split(src, "\n"), wire, nil)
 	if !ok {
 		t.Fatalf("method not virtualizable:\n%s", src)
 	}
@@ -305,7 +305,7 @@ const vmTag = `.method public static tagOf(I)Ljava/lang/String;
 
 func TestVMConstString(t *testing.T) {
 	wire := vmPermutation(0x5117e1d)
-	code, pool, ok := compileMethod(strings.Split(vmTag, "\n"), wire)
+	code, pool, ok := compileMethod(strings.Split(vmTag, "\n"), wire, nil)
 	if !ok {
 		t.Fatal("tagOf must be virtualizable")
 	}
@@ -320,6 +320,37 @@ func TestVMConstString(t *testing.T) {
 		got := vmRunG(code, []int64{int64(c.sel)}, nil, pool, wire)
 		if got.kind != 'L' || got.obj != c.want {
 			t.Errorf("tagOf(%d) = %v (%c), want %q", c.sel, got.obj, got.kind, c.want)
+		}
+	}
+}
+
+const vmMaxOf = `.method public static maxOf(II)I
+    .registers 3
+    invoke-static {p0, p1}, Ljava/lang/Math;->max(II)I
+    move-result v0
+    return v0
+.end method`
+
+func TestVMInvokeStatic(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	code, pool, ok := compileMethod(strings.Split(vmMaxOf, "\n"), wire, nil)
+	if !ok {
+		t.Fatal("maxOf (invoke-static of external Math.max) must be virtualizable")
+	}
+	// owner (dotted) and method name were interned into the pool.
+	if len(pool) != 2 || pool[0] != "java.lang.Math" || pool[1] != "max" {
+		t.Fatalf("pool = %v, want [java.lang.Math max]", pool)
+	}
+	ref := func(a, b int32) int32 {
+		if a >= b {
+			return a
+		}
+		return b
+	}
+	for _, tc := range [][2]int32{{7, 3}, {3, 8}, {-1, -5}, {4, 4}} {
+		got := int32(vmRunG(code, []int64{int64(tc[0]), int64(tc[1])}, nil, pool, wire).i64)
+		if got != ref(tc[0], tc[1]) {
+			t.Errorf("maxOf(%d,%d) = %d, want %d", tc[0], tc[1], got, ref(tc[0], tc[1]))
 		}
 	}
 }
@@ -382,14 +413,14 @@ func hexBytes(b []byte) string {
 }
 
 func TestVMBailsOnUnsupported(t *testing.T) {
-	// contains an invoke -> not virtualizable
+	// invoke-virtual is unsupported (only invoke-static of external int methods)
 	src := `.method public static f(I)I
     .registers 2
-    invoke-static {}, Lx/Y;->g()V
+    invoke-virtual {p0}, Lx/Y;->g(I)V
     return p0
 .end method`
-	if _, _, ok := compileMethod(strings.Split(src, "\n"), vmPermutation(1)); ok {
-		t.Error("expected bail on method with invoke")
+	if _, _, ok := compileMethod(strings.Split(src, "\n"), vmPermutation(1), nil); ok {
+		t.Error("expected bail on invoke-virtual")
 	}
 	// unsupported primitive param (float) -> bail (int/long/reference are ok now)
 	src2 := `.method public static f(F)I
@@ -397,8 +428,19 @@ func TestVMBailsOnUnsupported(t *testing.T) {
     const/4 v0, 0x1
     return v0
 .end method`
-	if _, _, ok := compileMethod(strings.Split(src2, "\n"), vmPermutation(1)); ok {
+	if _, _, ok := compileMethod(strings.Split(src2, "\n"), vmPermutation(1), nil); ok {
 		t.Error("expected bail on unsupported (float) param")
+	}
+	// invoke-static of an OWNED method must bail (name-based reflection would
+	// break after renaming).
+	src3 := `.method public static f(I)I
+    .registers 2
+    invoke-static {p0}, Lgolden/Own;->h(I)I
+    move-result v0
+    return v0
+.end method`
+	if _, _, ok := compileMethod(strings.Split(src3, "\n"), vmPermutation(1), []string{"golden"}); ok {
+		t.Error("expected bail on invoke-static of an owned method")
 	}
 }
 

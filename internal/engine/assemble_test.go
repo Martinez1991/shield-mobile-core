@@ -58,7 +58,7 @@ func TestVMAssembles(t *testing.T) {
 	}
 
 	wire := vmPermutation(0x5117e1d)
-	code, _, ok := compileMethod(strings.Split(vmPoly, "\n"), wire)
+	code, _, ok := compileMethod(strings.Split(vmPoly, "\n"), wire, nil)
 	if !ok {
 		t.Fatal("poly must be virtualizable")
 	}

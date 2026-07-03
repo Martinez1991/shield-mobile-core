@@ -177,6 +177,10 @@ func VMClass(base string, wire []byte) *smali.Class {
 	p("    new-array v10, v1, [J")
 	p("    new-array v9, v1, [Ljava/lang/Object;")
 	p("    move-object/16 v18, v9")
+	// v19 holds the pending invoke result; seed it with a valid ref so the
+	// verifier sees it definitely-assigned (move-result only runs after an
+	// invoke, which overwrites it).
+	p("    move-object/16 v19, v9")
 	p("    const/4 v3, 0x1")
 	p("    :loop")
 	p("    aget-byte v4, v11, v3")
@@ -285,6 +289,72 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    aput-object v9, v8, v6")
 		p("    goto :loop")
 		p("    %s", lc)
+	}
+
+	// INVOKE_STATIC ownerIdx, nameIdx, argCount, argReg...: resolve an external
+	// static method by reflection (owner/name from the string pool p3, all-int
+	// param types) and call it; the boxed result is held in v19 for MOVE_RESULT.
+	{
+		li := label()
+		p("    const/16 v5, 0x%x", w(opInvokeStatic))
+		p("    if-ne v4, v5, %s", li)
+		readByte("v6") // owner pool idx
+		readByte("v7") // name pool idx
+		readByte("v8") // arg count
+		p("    move-object/16 v9, p3")
+		p("    aget-object v0, v9, v6")
+		p("    invoke-static {v0}, Ljava/lang/Class;->forName(Ljava/lang/String;)Ljava/lang/Class;")
+		p("    move-result-object v0") // owner Class
+		// Class[] paramTypes = { Integer.TYPE, ... } (argCount entries)
+		p("    new-array v1, v8, [Ljava/lang/Class;")
+		p("    sget-object v12, Ljava/lang/Integer;->TYPE:Ljava/lang/Class;")
+		p("    const/4 v5, 0x0")
+		ptLoop, ptDone := label(), label()
+		p("    %s", ptLoop)
+		p("    if-ge v5, v8, %s", ptDone)
+		p("    aput-object v12, v1, v5")
+		p("    add-int/lit8 v5, v5, 0x1")
+		p("    goto %s", ptLoop)
+		p("    %s", ptDone)
+		p("    aget-object v13, v9, v7") // method name
+		p("    invoke-virtual {v0, v13, v1}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;")
+		p("    move-result-object v0") // Method
+		// Object[] args = { Integer.valueOf(r[reg]), ... }
+		p("    new-array v1, v8, [Ljava/lang/Object;")
+		p("    const/4 v5, 0x0")
+		agLoop, agDone := label(), label()
+		p("    %s", agLoop)
+		p("    if-ge v5, v8, %s", agDone)
+		p("    aget-byte v6, v11, v3") // read next arg register index
+		p("    and-int/lit16 v6, v6, 0xff")
+		p("    add-int/lit8 v3, v3, 0x1")
+		p("    aget v7, v2, v6") // int value
+		p("    invoke-static {v7}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;")
+		p("    move-result-object v7")
+		p("    aput-object v7, v1, v5")
+		p("    add-int/lit8 v5, v5, 0x1")
+		p("    goto %s", agLoop)
+		p("    %s", agDone)
+		p("    const/4 v6, 0x0") // null receiver (static)
+		p("    invoke-virtual {v0, v6, v1}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+		p("    move-result-object v19") // pending result (boxed)
+		p("    goto :loop")
+		p("    %s", li)
+	}
+
+	// MOVE_RESULT dest: unbox the pending Integer result into an int register.
+	{
+		lm := label()
+		p("    const/16 v5, 0x%x", w(opMoveResult))
+		p("    if-ne v4, v5, %s", lm)
+		readByte("v6")
+		p("    move-object/16 v0, v19")
+		p("    check-cast v0, Ljava/lang/Integer;")
+		p("    invoke-virtual {v0}, Ljava/lang/Integer;->intValue()I")
+		p("    move-result v7")
+		p("    aput v7, v2, v6")
+		p("    goto :loop")
+		p("    %s", lm)
 	}
 
 	// binary ops

@@ -103,6 +103,11 @@ const (
 	opMoveObj    // dest, src (move-object)
 	opRetObj     // src (return-object)
 	opConstStr   // dest, poolIdx (const-string: load a pooled literal into ro)
+	// data-driven invoke (#20/#14, invoke slice). Only invoke-static of an
+	// EXTERNAL method (never renamed, so name-based reflection is stable) with
+	// int args and an int/void return. Resolved by reflection in the interpreter.
+	opInvokeStatic // poolOwnerIdx, poolNameIdx, argCount, argReg... (int args)
+	opMoveResult   // dest (int result of the preceding invoke)
 	opCount
 )
 
@@ -171,7 +176,7 @@ func imm8(v int64) []byte {
 // constant pool (const-string literals lifted out of the body), or ok=false.
 // Supports straight-line integer ops plus branches/labels (issue #14) via a
 // two-pass layout that resolves label targets to absolute bytecode offsets.
-func compileMethod(block []string, wire []byte) ([]byte, []string, bool) {
+func compileMethod(block []string, wire []byte, ownedPrefixes []string) ([]byte, []string, bool) {
 	decl := block[0]
 	m := vmMethodDeclRE.FindStringSubmatch(decl)
 	if m == nil {
@@ -216,7 +221,7 @@ func compileMethod(block []string, wire []byte) ([]byte, []string, bool) {
 	}
 
 	var ops []vop
-	var pool []string // const-string literals, interned; indexed by opConstStr
+	var pool []string // interned strings (const-string literals, invoke owner/name)
 	labelToOp := map[string]int{}
 	var pending []string
 	push := func(v vop) {
@@ -225,6 +230,20 @@ func compileMethod(block []string, wire []byte) ([]byte, []string, bool) {
 		}
 		pending = nil
 		ops = append(ops, v)
+	}
+	// intern returns the pool index of s (added if new), or -1 if the pool would
+	// overflow the 1-byte index.
+	intern := func(s string) int {
+		for i, p := range pool {
+			if p == s {
+				return i
+			}
+		}
+		if len(pool) > 255 {
+			return -1
+		}
+		pool = append(pool, s)
+		return len(pool) - 1
 	}
 
 	// pass 1a: arg loaders. Primitives read from the [J array (int narrows, long
@@ -256,23 +275,21 @@ func compileMethod(block []string, wire []byte) ([]byte, []string, bool) {
 		// into the string pool and referenced by index.
 		if rtok, lit, isStr := parseConstString(t); isStr {
 			d, okr := reg(rtok)
-			if !okr {
-				return nil, nil, false
-			}
-			idx := len(pool)
-			for i, p := range pool { // intern identical literals
-				if p == lit {
-					idx = i
-					break
-				}
-			}
-			if idx == len(pool) {
-				pool = append(pool, lit)
-			}
-			if idx > 255 {
+			idx := intern(lit)
+			if !okr || idx < 0 {
 				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opConstStr], d, byte(idx)}})
+			continue
+		}
+		// invoke-static of an external int method: parsed specially (the {..} reg
+		// list and method ref break splitOperands). Owner/name go into the pool.
+		if inv, isInv := parseInvokeStatic(t); isInv {
+			b, ok := compileInvokeStatic(inv, wire, reg, intern, ownedPrefixes)
+			if !ok {
+				return nil, nil, false
+			}
+			push(vop{bytes: b})
 			continue
 		}
 		fields := splitOperands(t)
@@ -418,6 +435,12 @@ func compileMethod(block []string, wire []byte) ([]byte, []string, bool) {
 				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opRetWide], s}})
+		case op == "move-result":
+			d, ok := reg(fields[1])
+			if !ok {
+				return nil, nil, false
+			}
+			push(vop{bytes: []byte{wire[opMoveResult], d}})
 		case op == "return":
 			s, ok := reg(fields[1])
 			if !ok {
@@ -498,6 +521,67 @@ func parseConstString(t string) (reg, lit string, ok bool) {
 		return "", "", false
 	}
 	return m[1], m[2], true
+}
+
+// invokeStatic is a parsed invoke-static instruction.
+type invokeStatic struct {
+	regs  []string // argument registers, in order
+	owner string   // owner descriptor, e.g. "Ljava/lang/Math;"
+	name  string   // method name
+	prms  string   // bare parameter descriptor, e.g. "II"
+	ret   string   // return descriptor
+}
+
+var invokeStaticRE = regexp.MustCompile(`^invoke-static\s+\{([^}]*)\}\s*,\s*(L[^;]+;)->([^(]+)\(([^)]*)\)(\S+)$`)
+
+func parseInvokeStatic(t string) (invokeStatic, bool) {
+	m := invokeStaticRE.FindStringSubmatch(t)
+	if m == nil {
+		return invokeStatic{}, false
+	}
+	var regs []string
+	for _, r := range strings.Split(m[1], ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			regs = append(regs, r)
+		}
+	}
+	return invokeStatic{regs: regs, owner: m[2], name: m[3], prms: m[4], ret: m[5]}, true
+}
+
+// compileInvokeStatic encodes an invoke-static, or returns ok=false if it is out
+// of the supported subset: the owner must be EXTERNAL (owned classes get renamed,
+// which would break name-based reflection at runtime), all args int, and the
+// return int or void.
+func compileInvokeStatic(inv invokeStatic, wire []byte, reg func(string) (byte, bool), intern func(string) int, ownedPrefixes []string) ([]byte, bool) {
+	if isOwned(inv.owner, ownedPrefixes) {
+		return nil, false
+	}
+	toks, ok := tokenizeParams(inv.prms)
+	if !ok || len(toks) != len(inv.regs) {
+		return nil, false
+	}
+	for _, d := range toks {
+		if d != "I" {
+			return nil, false
+		}
+	}
+	if inv.ret != "I" && inv.ret != "V" {
+		return nil, false
+	}
+	ownerIdx := intern(smali.DescToDotted(inv.owner))
+	nameIdx := intern(inv.name)
+	if ownerIdx < 0 || nameIdx < 0 || len(inv.regs) > 255 {
+		return nil, false
+	}
+	b := []byte{wire[opInvokeStatic], byte(ownerIdx), byte(nameIdx), byte(len(inv.regs))}
+	for _, rt := range inv.regs {
+		r, okr := reg(rt)
+		if !okr {
+			return nil, false
+		}
+		b = append(b, r)
+	}
+	return b, true
 }
 
 // bin3[op] = logical+1 for 3-address ALU ops (0 means not present).
@@ -602,6 +686,31 @@ func cmp64(a, b int64) int32 {
 	}
 }
 
+// modeledStatics lets the Go reference interpreter simulate a few pure, side-
+// effect-free library methods so the compiler↔executor equivalence tests still
+// cover invoke-static methods. The injected smali interpreter uses real
+// reflection and is not limited to this set; ART is the oracle for the rest.
+var modeledStatics = map[string]func([]int32) int32{
+	"java.lang.Math.max": func(a []int32) int32 {
+		if a[0] >= a[1] {
+			return a[0]
+		}
+		return a[1]
+	},
+	"java.lang.Math.min": func(a []int32) int32 {
+		if a[0] <= a[1] {
+			return a[0]
+		}
+		return a[1]
+	},
+	"java.lang.Math.abs": func(a []int32) int32 {
+		if a[0] < 0 {
+			return -a[0]
+		}
+		return a[0]
+	},
+}
+
 // vmResult is the Go reference interpreter's typed result: kind 'I'/'J' carry a
 // primitive in i64 (int sign-extended), kind 'L' carries an object in obj.
 type vmResult struct {
@@ -633,6 +742,7 @@ func vmRunG(code []byte, args []int64, objArgs []any, strs []string, wire []byte
 	r := make([]int32, numRegs)
 	rw := make([]int64, numRegs)
 	ro := make([]any, numRegs)
+	var pending int32 // result of the most recent invoke-static (int)
 	pc := 1
 	rd := func() byte { b := code[pc]; pc++; return b }
 	imm := func() int32 { v := int32(binary.BigEndian.Uint32(code[pc:])); pc += 4; return v }
@@ -860,6 +970,25 @@ func vmRunG(code []byte, args []int64, objArgs []any, strs []string, wire []byte
 			pc++
 			d, idx := rd(), rd()
 			ro[d] = strs[idx]
+		case opInvokeStatic:
+			pc++
+			ownerIdx, nameIdx, argc := rd(), rd(), rd()
+			args := make([]int32, argc)
+			for k := 0; k < int(argc); k++ {
+				args[k] = r[rd()]
+			}
+			// The Go reference model can only simulate a small set of pure library
+			// methods (the interpreter uses real reflection); ART is the oracle for
+			// the rest. Unmodelled calls leave pending at 0.
+			if fn := modeledStatics[strs[ownerIdx]+"."+strs[nameIdx]]; fn != nil {
+				pending = fn(args)
+			} else {
+				pending = 0
+			}
+		case opMoveResult:
+			pc++
+			d := rd()
+			r[d] = pending
 		case opGoto:
 			pc++
 			pc = rd16()
@@ -1144,7 +1273,7 @@ func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64
 			continue
 		}
 		forEachMethod(c, func(bk []string) []string {
-			code, pool, ok := compileMethod(bk, wire)
+			code, pool, ok := compileMethod(bk, wire, includePrefixes)
 			if !ok {
 				return bk
 			}
