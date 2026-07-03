@@ -209,7 +209,7 @@ func TestRunVirtualizes(t *testing.T) {
 		t.Errorf("VM interpreter not injected: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(dir, "Calc.smali"))
-	if !strings.Contains(string(body), "Lshield/rt/VM;->run([B[J[Ljava/lang/Object;)Ljava/lang/Object;") {
+	if !strings.Contains(string(body), "Lshield/rt/VM;->run([B[J[Ljava/lang/Object;[Ljava/lang/String;)Ljava/lang/Object;") {
 		t.Error("method body was not replaced by a VM call")
 	}
 	if strings.Contains(string(body), "mul-int v0, p0, p0") {

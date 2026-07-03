@@ -58,7 +58,7 @@ func TestVMAssembles(t *testing.T) {
 	}
 
 	wire := vmPermutation(0x5117e1d)
-	code, ok := compileMethod(strings.Split(vmPoly, "\n"), wire)
+	code, _, ok := compileMethod(strings.Split(vmPoly, "\n"), wire)
 	if !ok {
 		t.Fatal("poly must be virtualizable")
 	}
@@ -69,7 +69,7 @@ func TestVMAssembles(t *testing.T) {
 	host := &smali.Class{
 		Descriptor: "Lcom/x/Y;",
 		Lines: append([]string{".class public Lcom/x/Y;", ".super Ljava/lang/Object;", ""},
-			virtualizedBody(".method public static poly(II)I", pinfos, code)...),
+			virtualizedBody(".method public static poly(II)I", pinfos, code, nil)...),
 	}
 	writeClass(t, dir, "com/x/Y.smali", host.Lines)
 	vm := VMClass(dir, wire)

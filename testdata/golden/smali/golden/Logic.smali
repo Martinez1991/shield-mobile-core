@@ -26,3 +26,17 @@
     move-object v0, p1
     return-object v0
 .end method
+
+# tag exercises const-string virtualization: the string literals are lifted into
+# the VM's string pool (invisible to a static const-string scan), and — because
+# virtualization runs before string encryption — the pooled literals are then
+# themselves AES-encrypted. tag(1)="pos"; tag(-1)="neg".
+.method public static tag(I)Ljava/lang/String;
+    .registers 2
+    if-lez p0, :neg
+    const-string v0, "pos"
+    return-object v0
+    :neg
+    const-string v0, "neg"
+    return-object v0
+.end method

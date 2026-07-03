@@ -42,7 +42,7 @@ func FuzzCompileMethod(f *testing.F) {
 	addSeeds(f)
 	wire := vmPermutation(1)
 	f.Fuzz(func(t *testing.T, s string) {
-		_, _ = compileMethod(strings.Split(s, "\n"), wire)
+		_, _, _ = compileMethod(strings.Split(s, "\n"), wire)
 	})
 }
 

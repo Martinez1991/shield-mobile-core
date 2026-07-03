@@ -102,6 +102,7 @@ const (
 	opLoadArgObj // destReg, argIdx (object param, from the [Object args)
 	opMoveObj    // dest, src (move-object)
 	opRetObj     // src (return-object)
+	opConstStr   // dest, poolIdx (const-string: load a pooled literal into ro)
 	opCount
 )
 
@@ -166,35 +167,36 @@ func imm8(v int64) []byte {
 	return b[:]
 }
 
-// compileMethod returns the bytecode for a virtualizable method, or ok=false.
+// compileMethod returns the bytecode for a virtualizable method plus its string
+// constant pool (const-string literals lifted out of the body), or ok=false.
 // Supports straight-line integer ops plus branches/labels (issue #14) via a
 // two-pass layout that resolves label targets to absolute bytecode offsets.
-func compileMethod(block []string, wire []byte) ([]byte, bool) {
+func compileMethod(block []string, wire []byte) ([]byte, []string, bool) {
 	decl := block[0]
 	m := vmMethodDeclRE.FindStringSubmatch(decl)
 	if m == nil {
-		return nil, false
+		return nil, nil, false
 	}
 	flags, params, ret := m[1], m[3], m[4]
 	if !strings.Contains(" "+flags, " static ") {
-		return nil, false
+		return nil, nil, false
 	}
 	if _, ok := returnKind(ret); !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	pinfos, regWidth, ok := parseParams(params)
 	if !ok || len(pinfos) == 0 {
-		return nil, false
+		return nil, nil, false
 	}
 	// The virtualized wrapper marshals each param via aput-wide/aput-object on
 	// its param register, which (formats 23x/3rc) must be <= v15. Wrapper temps
-	// occupy v0..v5, so bail if the params would spill past v15.
-	if 5+regWidth > 15 {
-		return nil, false
+	// occupy v0..v6, so bail if the params would spill past v15.
+	if 6+regWidth > 15 {
+		return nil, nil, false
 	}
 	regKind, regCount, ok := findRegs(block)
 	if !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	numRegs := regCount
 	paramBase := regCount - regWidth
@@ -203,7 +205,7 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		paramBase = regCount
 	}
 	if numRegs <= 0 || numRegs > 255 || paramBase < 0 {
-		return nil, false
+		return nil, nil, false
 	}
 	reg := func(tok string) (byte, bool) {
 		idx, ok := parseReg(tok, paramBase)
@@ -214,6 +216,7 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 	}
 
 	var ops []vop
+	var pool []string // const-string literals, interned; indexed by opConstStr
 	labelToOp := map[string]int{}
 	var pending []string
 	push := func(v vop) {
@@ -248,6 +251,30 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			pending = append(pending, t) // label; binds to the next emitted op
 			continue
 		}
+		// const-string is parsed specially: its quoted literal may contain spaces
+		// or commas, so it must not go through splitOperands. The literal is lifted
+		// into the string pool and referenced by index.
+		if rtok, lit, isStr := parseConstString(t); isStr {
+			d, okr := reg(rtok)
+			if !okr {
+				return nil, nil, false
+			}
+			idx := len(pool)
+			for i, p := range pool { // intern identical literals
+				if p == lit {
+					idx = i
+					break
+				}
+			}
+			if idx == len(pool) {
+				pool = append(pool, lit)
+			}
+			if idx > 255 {
+				return nil, nil, false
+			}
+			push(vop{bytes: []byte{wire[opConstStr], d, byte(idx)}})
+			continue
+		}
 		fields := splitOperands(t)
 		op := fields[0]
 		switch {
@@ -257,21 +284,21 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			d, ok1 := reg(fields[1])
 			v, ok2 := parseLit(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: append([]byte{wire[opConst], d}, imm4(v)...)})
 		case op == "move" || op == "move/16" || op == "move/from16":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opMove], d, s}})
 		case op == "move-object" || op == "move-object/16" || op == "move-object/from16":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opMoveObj], d, s}})
 		case bin3[op] != 0:
@@ -279,14 +306,14 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			a, ok2 := reg(fields[2])
 			b, ok3 := reg(fields[3])
 			if !ok1 || !ok2 || !ok3 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[bin3[op]-1], d, a, b}})
 		case bin2[op] != 0:
 			d, ok1 := reg(fields[1])
 			b, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[bin2[op]-1], d, d, b}})
 		case litMap[op] != 0:
@@ -294,14 +321,14 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			s, ok2 := reg(fields[2])
 			v, ok3 := parseLit(fields[3])
 			if !ok1 || !ok2 || !ok3 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: append([]byte{wire[litMap[op]-1], d, s}, imm4(v)...)})
 		case unary[op] != 0:
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[unary[op]-1], d, s}})
 		// --- 64-bit long ops ---
@@ -309,21 +336,21 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			d, ok1 := reg(fields[1])
 			v, ok2 := parseLit(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: append([]byte{wire[opConstWide], d}, imm8(v<<48)...)})
 		case op == "const-wide" || op == "const-wide/16" || op == "const-wide/32":
 			d, ok1 := reg(fields[1])
 			v, ok2 := parseLit(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: append([]byte{wire[opConstWide], d}, imm8(v)...)})
 		case op == "move-wide" || op == "move-wide/from16" || op == "move-wide/16":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opMoveWide], d, s}})
 		case binL3[op] != 0:
@@ -331,14 +358,14 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			a, ok2 := reg(fields[2])
 			b, ok3 := reg(fields[3])
 			if !ok1 || !ok2 || !ok3 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[binL3[op]-1], d, a, b}})
 		case binL2[op] != 0:
 			d, ok1 := reg(fields[1])
 			b, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[binL2[op]-1], d, d, b}})
 		case shiftL3[op] != 0:
@@ -346,35 +373,35 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			a, ok2 := reg(fields[2])
 			b, ok3 := reg(fields[3]) // b is an INT register
 			if !ok1 || !ok2 || !ok3 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[shiftL3[op]-1], d, a, b}})
 		case shiftL2[op] != 0:
 			d, ok1 := reg(fields[1])
 			b, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[shiftL2[op]-1], d, d, b}})
 		case unaryL[op] != 0:
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[unaryL[op]-1], d, s}})
 		case op == "int-to-long":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opI2L], d, s}})
 		case op == "long-to-int":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opL2I], d, s}})
 		case op == "cmp-long":
@@ -382,25 +409,25 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			a, ok2 := reg(fields[2])
 			b, ok3 := reg(fields[3])
 			if !ok1 || !ok2 || !ok3 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opCmpLong], d, a, b}})
 		case op == "return-wide":
 			s, ok := reg(fields[1])
 			if !ok {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opRetWide], s}})
 		case op == "return":
 			s, ok := reg(fields[1])
 			if !ok {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opRet], s}})
 		case op == "return-object":
 			s, ok := reg(fields[1])
 			if !ok {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[opRetObj], s}})
 		case op == "goto" || op == "goto/16" || op == "goto/32":
@@ -409,19 +436,19 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 			a, ok1 := reg(fields[1])
 			b, ok2 := reg(fields[2])
 			if !ok1 || !ok2 {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[branch2[op]], a, b}, isJump: true, label: fields[3]})
 		case branchZ[op] != 0:
 			a, ok := reg(fields[1])
 			if !ok {
-				return nil, false
+				return nil, nil, false
 			}
 			push(vop{bytes: []byte{wire[branchZ[op]], a}, isJump: true, label: fields[2]})
 		case op == "nop":
 			// skip (labels carry to the next real op)
 		default:
-			return nil, false
+			return nil, nil, false
 		}
 	}
 	// labels at the very end bind past the last op.
@@ -452,12 +479,25 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		if o.isJump {
 			t, ok := labelOffset(o.label)
 			if !ok || t > 0xFFFF {
-				return nil, false // undefined/oversized jump target
+				return nil, nil, false // undefined/oversized jump target
 			}
 			code = append(code, byte(t>>8), byte(t))
 		}
 	}
-	return code, true
+	return code, pool, true
+}
+
+// vmConstStringRE captures the register and quoted literal of a const-string.
+// The literal body is carried verbatim (smali escapes preserved), so re-emitting
+// it in the wrapper round-trips exactly.
+var vmConstStringRE = regexp.MustCompile(`^const-string(?:/jumbo)?\s+([vp]\d+),\s*"(.*)"\s*$`)
+
+func parseConstString(t string) (reg, lit string, ok bool) {
+	m := vmConstStringRE.FindStringSubmatch(t)
+	if m == nil {
+		return "", "", false
+	}
+	return m[1], m[2], true
 }
 
 // bin3[op] = logical+1 for 3-address ALU ops (0 means not present).
@@ -576,7 +616,7 @@ func vmExec(code []byte, args []int64, wire []byte) int32 { return int32(vmRun(c
 
 // vmRun is a convenience wrapper for primitive-returning methods (no objects).
 func vmRun(code []byte, args []int64, wire []byte) int64 {
-	return vmRunG(code, args, nil, wire).i64
+	return vmRunG(code, args, nil, nil, wire).i64
 }
 
 // vmRunG is the Go reference interpreter. Primitive args are int64 (one slot per
@@ -584,7 +624,7 @@ func vmRun(code []byte, args []int64, wire []byte) int64 {
 // Wide values live in a parallel long register file rw and objects in ro, so the
 // existing int handlers (using r) are unchanged. RET (int) sign-extends, RET_WIDE
 // returns the full long, RET_OBJ returns the object.
-func vmRunG(code []byte, args []int64, objArgs []any, wire []byte) vmResult {
+func vmRunG(code []byte, args []int64, objArgs []any, strs []string, wire []byte) vmResult {
 	inv := make([]int, opCount)
 	for logical, w := range wire {
 		inv[w] = logical
@@ -816,6 +856,10 @@ func vmRunG(code []byte, args []int64, objArgs []any, wire []byte) vmResult {
 			pc++
 			s := rd()
 			return vmResult{kind: 'L', obj: ro[s]}
+		case opConstStr:
+			pc++
+			d, idx := rd(), rd()
+			ro[d] = strs[idx]
 		case opGoto:
 			pc++
 			pc = rd16()
@@ -1100,14 +1144,14 @@ func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64
 			continue
 		}
 		forEachMethod(c, func(bk []string) []string {
-			code, ok := compileMethod(bk, wire)
+			code, pool, ok := compileMethod(bk, wire)
 			if !ok {
 				return bk
 			}
 			m := vmMethodDeclRE.FindStringSubmatch(bk[0])
 			pinfos, _, _ := parseParams(m[3])
 			count++
-			return virtualizedBody(bk[0], pinfos, code)
+			return virtualizedBody(bk[0], pinfos, code, pool)
 		})
 	}
 	if count == 0 {

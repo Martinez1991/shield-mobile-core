@@ -82,6 +82,22 @@ func Run(root string, p policy.Policy) (*Result, error) {
 		res.MetadataRemoved = passMetadata(classes)
 		res.Applied = append(res.Applied, "metadata-removal")
 	}
+	// Code virtualization runs before string encryption so it can lift a
+	// plaintext const-string into the VM's string pool (otherwise encryption
+	// would already have rewritten it into a decrypt call, and the method would
+	// no longer be virtualizable). The pool literals the wrapper emits are then
+	// encrypted by passStrings below — defense in depth. It also runs before
+	// class renaming (needs original scoped descriptors); the interpreter class
+	// is injected last, pristine.
+	var vmClass *smali.Class
+	if p.VM.Enabled {
+		n, vc := passVirtualize(classes, p.Rename.IncludePrefixes, p.Seed, base)
+		res.MethodsVirtual = n
+		vmClass = vc
+		if n > 0 {
+			res.Applied = append(res.Applied, "code-virtualization")
+		}
+	}
 	if p.Strings.Enabled {
 		algo := p.Strings.Algorithm
 		if algo == "" {
@@ -96,17 +112,6 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	if p.Rename.Enabled && p.Rename.Members {
 		res.MembersRenamed = passRenameMembers(classes, p.Rename.IncludePrefixes, keep)
 		res.Applied = append(res.Applied, "member-renaming")
-	}
-	// Code virtualization runs before class renaming (needs original scoped
-	// descriptors). The interpreter class is injected last, pristine.
-	var vmClass *smali.Class
-	if p.VM.Enabled {
-		n, vc := passVirtualize(classes, p.Rename.IncludePrefixes, p.Seed, base)
-		res.MethodsVirtual = n
-		vmClass = vc
-		if n > 0 {
-			res.Applied = append(res.Applied, "code-virtualization")
-		}
 	}
 	if p.Rename.Enabled {
 		renameMap := passRename(classes, p.Rename.IncludePrefixes, keep)

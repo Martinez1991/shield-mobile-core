@@ -23,7 +23,7 @@ const vmPoly = `.method public static poly(II)I
 
 func compileStr(t *testing.T, src string, wire []byte) []byte {
 	t.Helper()
-	code, ok := compileMethod(strings.Split(src, "\n"), wire)
+	code, _, ok := compileMethod(strings.Split(src, "\n"), wire)
 	if !ok {
 		t.Fatalf("method not virtualizable:\n%s", src)
 	}
@@ -293,6 +293,37 @@ func TestVMLongParam(t *testing.T) {
 	}
 }
 
+const vmTag = `.method public static tagOf(I)Ljava/lang/String;
+    .registers 2
+    if-lez p0, :neg
+    const-string v0, "pos"
+    return-object v0
+    :neg
+    const-string v0, "neg"
+    return-object v0
+.end method`
+
+func TestVMConstString(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+	code, pool, ok := compileMethod(strings.Split(vmTag, "\n"), wire)
+	if !ok {
+		t.Fatal("tagOf must be virtualizable")
+	}
+	// both literals lifted into the pool.
+	if len(pool) != 2 || pool[0] != "pos" || pool[1] != "neg" {
+		t.Fatalf("pool = %v, want [pos neg]", pool)
+	}
+	for _, c := range []struct {
+		sel  int32
+		want string
+	}{{1, "pos"}, {-1, "neg"}, {0, "neg"}} {
+		got := vmRunG(code, []int64{int64(c.sel)}, nil, pool, wire)
+		if got.kind != 'L' || got.obj != c.want {
+			t.Errorf("tagOf(%d) = %v (%c), want %q", c.sel, got.obj, got.kind, c.want)
+		}
+	}
+}
+
 func TestVMPermutationIsBijection(t *testing.T) {
 	for _, seed := range []int64{0, 1, 42, 0x5117e1d, -99} {
 		wire := vmPermutation(seed)
@@ -357,7 +388,7 @@ func TestVMBailsOnUnsupported(t *testing.T) {
     invoke-static {}, Lx/Y;->g()V
     return p0
 .end method`
-	if _, ok := compileMethod(strings.Split(src, "\n"), vmPermutation(1)); ok {
+	if _, _, ok := compileMethod(strings.Split(src, "\n"), vmPermutation(1)); ok {
 		t.Error("expected bail on method with invoke")
 	}
 	// unsupported primitive param (float) -> bail (int/long/reference are ok now)
@@ -366,7 +397,7 @@ func TestVMBailsOnUnsupported(t *testing.T) {
     const/4 v0, 0x1
     return v0
 .end method`
-	if _, ok := compileMethod(strings.Split(src2, "\n"), vmPermutation(1)); ok {
+	if _, _, ok := compileMethod(strings.Split(src2, "\n"), vmPermutation(1)); ok {
 		t.Error("expected bail on unsupported (float) param")
 	}
 }
@@ -391,7 +422,7 @@ func TestVMObject(t *testing.T) {
 		want string
 	}{{1, "AA"}, {0, "BB"}, {-5, "BB"}, {99, "AA"}}
 	for _, c := range cases {
-		got := vmRunG(code, []int64{int64(c.sel)}, []any{"AA", "BB"}, wire)
+		got := vmRunG(code, []int64{int64(c.sel)}, []any{"AA", "BB"}, nil, wire)
 		if got.kind != 'L' {
 			t.Fatalf("choose(%d): kind = %c, want L", c.sel, got.kind)
 		}

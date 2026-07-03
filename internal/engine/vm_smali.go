@@ -9,13 +9,16 @@ import (
 
 // virtualizedBody replaces a compiled method's body with a call to the VM. It
 // marshals the args into two arrays — a long[] of primitives (int widened, long
-// direct) and an Object[] of references — embeds the bytecode as a byte[] payload
-// and invokes Lshield/rt/VM;->run, which returns an Object (primitives boxed as
-// Long). The result is unboxed to match the method's declared return type.
+// direct) and an Object[] of references — builds a String[] of the method's
+// const-string literals, embeds the bytecode as a byte[] payload, and invokes
+// Lshield/rt/VM;->run, which returns an Object (primitives boxed as Long). The
+// result is unboxed to match the declared return type. Because virtualization
+// runs before string encryption, the pool literals emitted here are themselves
+// encrypted by the string pass afterwards (defense in depth).
 //
-// Register map (temps v0..v5, then the params): v0=[J prims, v1=[Object refs,
-// v2=[B bytecode, v3=index, v4:v5=wide box temp.
-func virtualizedBody(decl string, pinfos []paramInfo, code []byte) []string {
+// Register map (temps v0..v6, then the params): v0=[J prims, v1=[Object refs,
+// v2=[String pool, v3=[B bytecode, v4=index, v5:v6=wide box / string temp.
+func virtualizedBody(decl string, pinfos []paramInfo, code []byte, pool []string) []string {
 	m := vmMethodDeclRE.FindStringSubmatch(decl)
 	ret := m[4]
 	retKind, _ := returnKind(ret)
@@ -31,27 +34,35 @@ func virtualizedBody(decl string, pinfos []paramInfo, code []byte) []string {
 
 	var b []string
 	b = append(b, decl)
-	b = append(b, fmt.Sprintf("    .registers %d", 6+regWidth))
+	b = append(b, fmt.Sprintf("    .registers %d", 7+regWidth))
 	b = append(b, fmt.Sprintf("    const/16 v0, 0x%x", nPrim))
 	b = append(b, "    new-array v0, v0, [J")
 	b = append(b, fmt.Sprintf("    const/16 v1, 0x%x", nObj))
 	b = append(b, "    new-array v1, v1, [Ljava/lang/Object;")
 	for _, pi := range pinfos {
-		b = append(b, fmt.Sprintf("    const/16 v3, 0x%x", pi.argIdx))
+		b = append(b, fmt.Sprintf("    const/16 v4, 0x%x", pi.argIdx))
 		switch pi.kind {
 		case 'J':
-			b = append(b, fmt.Sprintf("    aput-wide p%d, v0, v3", pi.regOff))
+			b = append(b, fmt.Sprintf("    aput-wide p%d, v0, v4", pi.regOff))
 		case 'L':
-			b = append(b, fmt.Sprintf("    aput-object p%d, v1, v3", pi.regOff))
+			b = append(b, fmt.Sprintf("    aput-object p%d, v1, v4", pi.regOff))
 		default: // int: widen into the long[] slot
-			b = append(b, fmt.Sprintf("    int-to-long v4, p%d", pi.regOff))
-			b = append(b, "    aput-wide v4, v0, v3")
+			b = append(b, fmt.Sprintf("    int-to-long v5, p%d", pi.regOff))
+			b = append(b, "    aput-wide v5, v0, v4")
 		}
 	}
-	b = append(b, fmt.Sprintf("    const/16 v2, 0x%x", len(code)))
-	b = append(b, "    new-array v2, v2, [B")
-	b = append(b, "    fill-array-data v2, :vmbc")
-	b = append(b, "    invoke-static {v2, v0, v1}, Lshield/rt/VM;->run([B[J[Ljava/lang/Object;)Ljava/lang/Object;")
+	// v2 = String[] constant pool.
+	b = append(b, fmt.Sprintf("    const/16 v2, 0x%x", len(pool)))
+	b = append(b, "    new-array v2, v2, [Ljava/lang/String;")
+	for i, lit := range pool {
+		b = append(b, fmt.Sprintf("    const/16 v4, 0x%x", i))
+		b = append(b, fmt.Sprintf("    const-string v5, \"%s\"", lit))
+		b = append(b, "    aput-object v5, v2, v4")
+	}
+	b = append(b, fmt.Sprintf("    const/16 v3, 0x%x", len(code)))
+	b = append(b, "    new-array v3, v3, [B")
+	b = append(b, "    fill-array-data v3, :vmbc")
+	b = append(b, "    invoke-static {v3, v0, v1, v2}, Lshield/rt/VM;->run([B[J[Ljava/lang/Object;[Ljava/lang/String;)Ljava/lang/Object;")
 	b = append(b, "    move-result-object v0")
 	switch retKind {
 	case 'L':
@@ -151,7 +162,7 @@ func VMClass(base string, wire []byte) *smali.Class {
 	// p2 the Object[] of reference args. Returns Object: RET/RET_WIDE box the
 	// primitive as Long, RET_OBJ returns the reference. r=int registers (v2),
 	// v10=rw long registers, v18=ro object registers.
-	p(".method public static run([B[J[Ljava/lang/Object;)Ljava/lang/Object;")
+	p(".method public static run([B[J[Ljava/lang/Object;[Ljava/lang/String;)Ljava/lang/Object;")
 	p("    .locals 20")
 	// params p0/p1/p2 sit at v20/v21/v22 (locals+params), out of reach of
 	// aget/invoke (formats 23x/35c cap at v15). Relocate the bytecode to the free
@@ -259,6 +270,21 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    aput-object v9, v8, v6")
 		p("    goto :loop")
 		p("    %s", lm)
+	}
+
+	// CONST_STR dest, poolIdx: load a pooled string literal (p3) into ro
+	{
+		lc := label()
+		p("    const/16 v5, 0x%x", w(opConstStr))
+		p("    if-ne v4, v5, %s", lc)
+		readByte("v6")
+		readByte("v7")
+		p("    move-object/16 v8, p3")
+		p("    aget-object v9, v8, v7")
+		p("    move-object/16 v8, v18")
+		p("    aput-object v9, v8, v6")
+		p("    goto :loop")
+		p("    %s", lc)
 	}
 
 	// binary ops
