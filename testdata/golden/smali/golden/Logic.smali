@@ -40,3 +40,19 @@
     const-string v0, "neg"
     return-object v0
 .end method
+
+# score has real control flow plus an external call (Math.abs), so the VM bails
+# (invoke unsupported) and it is exercised by CONTROL-FLOW FLATTENING instead: the
+# blocks become cases of a central packed-switch dispatcher. Pure int, so the
+# typed-IR gate allows it. score(5)=|5-10|=5; score(-3)=0.
+.method public static score(I)I
+    .registers 3
+    if-lez p0, :neg
+    add-int/lit8 v0, p0, -0xa
+    invoke-static {v0}, Ljava/lang/Math;->abs(I)I
+    move-result v0
+    return v0
+    :neg
+    const/4 v0, 0x0
+    return v0
+.end method

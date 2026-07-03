@@ -18,7 +18,8 @@
   },
   "controlFlow": {
     "enabled": true,
-    "reorder": true
+    "reorder": true,
+    "flatten": true
   },
   "vm": {
     "enabled": true

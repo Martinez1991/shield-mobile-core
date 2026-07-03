@@ -88,5 +88,15 @@
     move-result-object v1
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
 
+    const/4 v1, 0x5
+    invoke-static {v1}, Lgolden/Logic;->score(I)I
+    move-result v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
+
+    const/4 v1, -0x3
+    invoke-static {v1}, Lgolden/Logic;->score(I)I
+    move-result v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
+
     return-void
 .end method

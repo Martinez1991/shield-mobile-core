@@ -31,6 +31,7 @@ type Result struct {
 	ClassesRenamed   int        `json:"classesRenamed"`
 	MembersRenamed   int        `json:"membersRenamed"`
 	MethodsVirtual   int        `json:"methodsVirtualized"`
+	MethodsFlattened int        `json:"methodsFlattened"`
 	MethodsReordered int        `json:"methodsReordered"`
 	OpaquePredicates int        `json:"opaquePredicates"`
 	MethodsPadded    int        `json:"methodsPadded"`
@@ -96,6 +97,16 @@ func Run(root string, p policy.Policy) (*Result, error) {
 		vmClass = vc
 		if n > 0 {
 			res.Applied = append(res.Applied, "code-virtualization")
+		}
+	}
+	// Control-flow flattening runs after virtualization (VM claims its methods
+	// first; flatten skips the wrappers) and before string encryption/renaming.
+	// A flattened method contains a packed-switch, which reorder bails on, so the
+	// control-flow passes stay disjoint.
+	if p.ControlFlow.Flatten {
+		res.MethodsFlattened = passFlatten(classes, p.Rename.IncludePrefixes, p.Seed)
+		if res.MethodsFlattened > 0 {
+			res.Applied = append(res.Applied, "control-flow-flattening")
 		}
 	}
 	if p.Strings.Enabled {

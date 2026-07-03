@@ -55,6 +55,9 @@ type Policy struct {
 		// Reorder physically shuffles basic blocks (§7 Instruction Reordering),
 		// safe-by-construction layout flattening.
 		Reorder bool `json:"reorder"`
+		// Flatten rewrites a method's control flow into a central dispatcher loop
+		// (§3.2/8 flattening), using the typed IR for register layout/eligibility.
+		Flatten bool `json:"flatten"`
 	} `json:"controlFlow"`
 
 	// Strings (section 3.3 String Encryption).
