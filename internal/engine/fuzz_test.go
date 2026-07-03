@@ -81,6 +81,6 @@ func FuzzPassesOnClass(f *testing.F) {
 		_ = passReorder(mk(), 7)
 		_ = passControlFlow(mk(), 7)
 		_ = passJunk(mk(), 2)
-		_, _ = passVirtualize(mk(), []string{"com/x"}, 7, "base")
+		_, _ = passVirtualize(mk(), []string{"com/x"}, 7, "base", 0)
 	})
 }

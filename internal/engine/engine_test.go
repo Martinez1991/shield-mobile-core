@@ -217,6 +217,88 @@ func TestRunVirtualizes(t *testing.T) {
 	}
 }
 
+const riskFixture = `.class public Lcom/bank/pay/Vault;
+.super Ljava/lang/Object;
+
+.method public static enc(I)I
+    .registers 3
+    invoke-static {}, Ljavax/crypto/Cipher;->getInstance()V
+    const-string v0, "sk_live_9f2a3b4c5d6e"
+    if-lez p0, :a
+    const/4 v0, 0x1
+    return v0
+    :a
+    const/4 v0, 0x0
+    return v0
+.end method
+
+.method public static add(II)I
+    .registers 3
+    add-int v0, p0, p1
+    return v0
+.end method
+`
+
+func riskProject(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "smali", "com", "bank", "pay")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	must(t, filepath.Join(dir, "Vault.smali"), riskFixture)
+	return root
+}
+
+func TestRunRiskDriven(t *testing.T) {
+	// risk-driven: only the high-risk method (crypto call + secret + branch) is
+	// virtualized; the trivial arithmetic method is left untouched.
+	root := riskProject(t)
+	p := policy.Default()
+	p.VM.Enabled = true
+	p.Rename.Enabled = false
+	p.Strings.Enabled = false
+	p.Rename.IncludePrefixes = []string{"com/bank"}
+	p.Risk.Enabled = true
+	p.Risk.Threshold = 0.3
+	p.Seed = 0x5117e1d
+
+	res, err := Run(root, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MethodsVirtual != 1 {
+		t.Fatalf("MethodsVirtual = %d, want 1 (only the high-risk enc)", res.MethodsVirtual)
+	}
+	body, _ := os.ReadFile(filepath.Join(root, "smali", "com", "bank", "pay", "Vault.smali"))
+	s := string(body)
+	if !strings.Contains(s, "Lshield/rt/VM;->run(") {
+		t.Error("high-risk enc should have been virtualized")
+	}
+	if !strings.Contains(s, "add-int v0, p0, p1") {
+		t.Error("low-risk add should be left untouched (not virtualized)")
+	}
+}
+
+func TestRunUniformWithoutRisk(t *testing.T) {
+	// without risk-driven, both methods are virtualized (uniform, current behavior).
+	root := riskProject(t)
+	p := policy.Default()
+	p.VM.Enabled = true
+	p.Rename.Enabled = false
+	p.Strings.Enabled = false
+	p.Rename.IncludePrefixes = []string{"com/bank"}
+	p.Seed = 0x5117e1d
+
+	res, err := Run(root, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MethodsVirtual != 2 {
+		t.Errorf("MethodsVirtual = %d, want 2 (uniform, no risk gate)", res.MethodsVirtual)
+	}
+}
+
 func TestManifestKeepRulesPreventRename(t *testing.T) {
 	root := t.TempDir()
 	// Decoded-project layout: AndroidManifest.xml at root + smali/ tree.

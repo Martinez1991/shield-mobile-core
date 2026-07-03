@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"shield/internal/ir"
+	"shield/internal/risk"
 	"shield/internal/smali"
 )
 
@@ -25,7 +26,7 @@ import (
 // It runs after code virtualization and skips VM wrappers; a flattened method
 // contains a packed-switch, which the reorder pass already bails on, so the two
 // control-flow passes do not fight.
-func passFlatten(classes []*smali.Class, includePrefixes []string, seed int64) int {
+func passFlatten(classes []*smali.Class, includePrefixes []string, seed int64, minRisk float64) int {
 	fid := 0
 	total := 0
 	for _, c := range classes {
@@ -33,6 +34,9 @@ func passFlatten(classes []*smali.Class, includePrefixes []string, seed int64) i
 			continue
 		}
 		forEachMethod(c, func(block []string) []string {
+			if minRisk > 0 && risk.Assess(block).Score < minRisk {
+				return block // risk-driven: below threshold, leave untouched
+			}
 			out, ok := flattenMethod(block, &fid)
 			if ok {
 				total++

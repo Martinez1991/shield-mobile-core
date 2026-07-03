@@ -75,7 +75,7 @@ func BenchmarkPassControlFlow(b *testing.B) {
 	benchPass(b, func(cs []*smali.Class) { passControlFlow(cs, 7) })
 }
 func BenchmarkPassVirtualize(b *testing.B) {
-	benchPass(b, func(cs []*smali.Class) { passVirtualize(cs, []string{"com/bench"}, 7, "smali") })
+	benchPass(b, func(cs []*smali.Class) { passVirtualize(cs, []string{"com/bench"}, 7, "smali", 0) })
 }
 func BenchmarkEstimateMethodRefs(b *testing.B) {
 	src := genClasses(benchN)

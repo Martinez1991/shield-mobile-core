@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"shield/internal/risk"
 	"shield/internal/smali"
 )
 
@@ -1385,7 +1386,7 @@ const vmDescriptor = "Lshield/rt/VM;"
 // passVirtualize compiles eligible methods of owned classes to VM bytecode. It
 // returns the number of methods virtualized and, if any, the interpreter class
 // to inject (the caller appends it so the mutation is explicit).
-func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64, base string) (int, *smali.Class) {
+func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64, base string, minRisk float64) (int, *smali.Class) {
 	wire := vmPermutation(seed)
 	count := 0
 	for _, c := range classes {
@@ -1393,6 +1394,9 @@ func passVirtualize(classes []*smali.Class, includePrefixes []string, seed int64
 			continue
 		}
 		forEachMethod(c, func(bk []string) []string {
+			if minRisk > 0 && risk.Assess(bk).Score < minRisk {
+				return bk // risk-driven: below threshold, leave untouched
+			}
 			code, pool, ok := compileMethod(bk, wire, includePrefixes)
 			if !ok {
 				return bk

@@ -109,10 +109,18 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	// encrypted by passStrings below — defense in depth. It also runs before
 	// class renaming (needs original scoped descriptors); the interpreter class
 	// is injected last, pristine.
+	// Risk-driven Planner (issue #65/#69): when enabled, the expensive passes only
+	// touch methods scoring >= the threshold. minRisk == 0 means "no gate" (apply
+	// uniformly), preserving the default behaviour.
+	minRisk := 0.0
+	if p.Risk.Enabled {
+		minRisk = p.Risk.Threshold
+		res.Applied = append(res.Applied, "risk-driven")
+	}
 	var vmClass *smali.Class
 	if p.VM.Enabled {
 		stage("virtualize", func() {
-			n, vc := passVirtualize(classes, p.Rename.IncludePrefixes, p.Seed, base)
+			n, vc := passVirtualize(classes, p.Rename.IncludePrefixes, p.Seed, base, minRisk)
 			res.MethodsVirtual = n
 			vmClass = vc
 			if n > 0 {
@@ -126,7 +134,7 @@ func Run(root string, p policy.Policy) (*Result, error) {
 	// control-flow passes stay disjoint.
 	if p.ControlFlow.Flatten {
 		stage("flatten", func() {
-			res.MethodsFlattened = passFlatten(classes, p.Rename.IncludePrefixes, p.Seed)
+			res.MethodsFlattened = passFlatten(classes, p.Rename.IncludePrefixes, p.Seed, minRisk)
 			if res.MethodsFlattened > 0 {
 				res.Applied = append(res.Applied, "control-flow-flattening")
 			}

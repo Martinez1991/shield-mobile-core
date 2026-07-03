@@ -40,6 +40,14 @@ type Policy struct {
 		Enabled bool `json:"enabled"`
 	} `json:"vm"`
 
+	// Risk (section 2.2 stage 8 Planner; issue #65). When enabled, the expensive
+	// passes (VM, flattening) are applied risk-driven: only to methods whose
+	// static risk score (internal/risk) is >= Threshold, instead of uniformly.
+	Risk struct {
+		Enabled   bool    `json:"enabled"`
+		Threshold float64 `json:"threshold"` // [0,1); methods below are left untouched
+	} `json:"risk"`
+
 	// RASP (section 6). Injects the Lshield/rt/RASP; runtime (root/debugger/
 	// emulator detection with deferred reaction). It is a library the host/app
 	// can call; wiring it into entry points is app-specific.
