@@ -147,7 +147,7 @@ func TestVMExtendedIntOps(t *testing.T) {
 
 const vmNarrow = `.method public static narrow(I)I
     .registers 4
-    const/high16 v0, -0x1
+    const/high16 v0, 0x12340000
     or-int v0, v0, p0
     int-to-short v1, v0
     int-to-char v2, v0
@@ -161,7 +161,7 @@ func TestVMNarrowingAndHigh16(t *testing.T) {
 	wire := vmPermutation(0x5117e1d)
 	narrow := compileStr(t, vmNarrow, wire)
 	ref := func(a int32) int32 {
-		v0 := int32(-1) << 16 // const/high16 -0x1
+		v0 := int32(0x12340000) // const/high16 operand is the full value
 		v0 |= a
 		v1 := int32(int16(v0))
 		v2 := int32(uint16(v0))

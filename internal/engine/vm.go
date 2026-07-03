@@ -198,20 +198,15 @@ func compileMethod(block []string, wire []byte) ([]byte, bool) {
 		fields := splitOperands(t)
 		op := fields[0]
 		switch {
-		case op == "const/4" || op == "const/16" || op == "const":
+		// const/high16's smali operand is already the full 32-bit value (low 16
+		// bits zero), so it loads exactly like const — no shift.
+		case op == "const/4" || op == "const/16" || op == "const" || op == "const/high16":
 			d, ok1 := reg(fields[1])
 			v, ok2 := parseLit(fields[2])
 			if !ok1 || !ok2 {
 				return nil, false
 			}
 			push(vop{bytes: append([]byte{wire[opConst], d}, imm4(v)...)})
-		case op == "const/high16":
-			d, ok1 := reg(fields[1])
-			v, ok2 := parseLit(fields[2])
-			if !ok1 || !ok2 {
-				return nil, false
-			}
-			push(vop{bytes: append([]byte{wire[opConst], d}, imm4(v<<16)...)})
 		case op == "move" || op == "move/16" || op == "move/from16":
 			d, ok1 := reg(fields[1])
 			s, ok2 := reg(fields[2])

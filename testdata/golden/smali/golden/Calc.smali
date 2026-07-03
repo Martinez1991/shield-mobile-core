@@ -49,7 +49,7 @@
 # narrow(0xABCD) = -51 + -21555 + 43981 = 22375
 .method public static narrow(I)I
     .registers 4
-    const/high16 v0, -0x1
+    const/high16 v0, 0x12340000
     or-int v0, v0, p0
     int-to-short v1, v0
     int-to-char v2, v0
