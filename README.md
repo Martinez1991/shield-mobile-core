@@ -122,6 +122,19 @@ Exemplo de saída (fixture): segredo no baseline = 1 arquivo, no protegido = 0; 
 decompilado 31 → 245 (ruído de proteção); chamadas `SH.d`/`VM.run` presentes. jadx:
 <https://github.com/skylot/jadx>.
 
+### Gate de corretude runtime (doc §20, issue #3)
+
+*Differential testing* de **golden apps em ART real**: `testdata/golden` tem um
+`main` determinístico exercitando rename/VM/reorder/opaque/strings; o gate
+monta o dex **original vs protegido**, roda ambos via `app_process` num emulador
+Android e exige **saída byte-idêntica** (divergência = obfuscação quebrou a
+semântica → falha). Local: valida a montagem; a execução em ART roda no CI
+(workflow `correctness`, emulador).
+
+```bash
+SMALI_JAR=~/tools/smali-2.5.2.jar ./scripts/golden-diff.sh   # com device/emulador: GATE OK
+```
+
 ### Correção semântica (doc §20)
 
 As transformações preservam a semântica por construção:
