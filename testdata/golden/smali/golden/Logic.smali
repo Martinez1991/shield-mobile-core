@@ -93,3 +93,30 @@
     const-string v1, "zero"
     return-object v1
 .end method
+
+# maxL: invoke-static with LONG args and a long return (#49). maxL(5e9,3)=5e9.
+.method public static maxL(JJ)J
+    .registers 6
+    invoke-static {p0, p1, p2, p3}, Ljava/lang/Math;->max(JJ)J
+    move-result-wide v0
+    return-wide v0
+.end method
+
+# strOf: invoke-static with an OBJECT return (#49). strOf(42)="42".
+.method public static strOf(I)Ljava/lang/String;
+    .registers 2
+    invoke-static {p0}, Ljava/lang/String;->valueOf(I)Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+
+# parseFixed: invoke-static with an OBJECT arg (a pooled const-string) (#49). The
+# int param is ignored (the VM only virtualizes methods with >=1 param).
+# parseFixed(0)=123.
+.method public static parseFixed(I)I
+    .registers 3
+    const-string v0, "123"
+    invoke-static {v0}, Ljava/lang/Integer;->parseInt(Ljava/lang/String;)I
+    move-result v1
+    return v1
+.end method

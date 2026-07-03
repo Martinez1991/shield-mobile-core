@@ -337,9 +337,9 @@ func TestVMInvokeStatic(t *testing.T) {
 	if !ok {
 		t.Fatal("maxOf (invoke-static of external Math.max) must be virtualizable")
 	}
-	// owner (dotted) and method name were interned into the pool.
-	if len(pool) != 2 || pool[0] != "java.lang.Math" || pool[1] != "max" {
-		t.Fatalf("pool = %v, want [java.lang.Math max]", pool)
+	// owner (dotted), method name and descriptor were interned into the pool.
+	if len(pool) != 3 || pool[0] != "java.lang.Math" || pool[1] != "max" || pool[2] != "(II)I" {
+		t.Fatalf("pool = %v, want [java.lang.Math max (II)I]", pool)
 	}
 	ref := func(a, b int32) int32 {
 		if a >= b {
@@ -352,6 +352,59 @@ func TestVMInvokeStatic(t *testing.T) {
 		if got != ref(tc[0], tc[1]) {
 			t.Errorf("maxOf(%d,%d) = %d, want %d", tc[0], tc[1], got, ref(tc[0], tc[1]))
 		}
+	}
+}
+
+const vmMaxL = `.method public static maxL(JJ)J
+    .registers 6
+    invoke-static {p0, p1, p2, p3}, Ljava/lang/Math;->max(JJ)J
+    move-result-wide v0
+    return-wide v0
+.end method`
+
+const vmStrOf = `.method public static strOf(I)Ljava/lang/String;
+    .registers 2
+    invoke-static {p0}, Ljava/lang/String;->valueOf(I)Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method`
+
+const vmParseNum = `.method public static parseNum(I)I
+    .registers 3
+    const-string v0, "123"
+    invoke-static {v0}, Ljava/lang/Integer;->parseInt(Ljava/lang/String;)I
+    move-result v1
+    return v1
+.end method`
+
+func TestVMInvokeWideAndObject(t *testing.T) {
+	wire := vmPermutation(0x5117e1d)
+
+	// long args + long return.
+	code, pool, ok := compileMethod(strings.Split(vmMaxL, "\n"), wire, nil)
+	if !ok {
+		t.Fatal("maxL must be virtualizable")
+	}
+	if got := vmRunG(code, []int64{5000000000, 3}, nil, pool, wire).i64; got != 5000000000 {
+		t.Errorf("maxL(5e9,3) = %d, want 5000000000", got)
+	}
+
+	// int arg + object return.
+	code, pool, ok = compileMethod(strings.Split(vmStrOf, "\n"), wire, nil)
+	if !ok {
+		t.Fatal("strOf must be virtualizable")
+	}
+	if got := vmRunG(code, []int64{42}, nil, pool, wire); got.kind != 'L' || got.obj != "42" {
+		t.Errorf("strOf(42) = %v (%c), want \"42\"", got.obj, got.kind)
+	}
+
+	// object arg (pooled const-string) + int return.
+	code, pool, ok = compileMethod(strings.Split(vmParseNum, "\n"), wire, nil)
+	if !ok {
+		t.Fatal("parseNum must be virtualizable")
+	}
+	if got := int32(vmRunG(code, []int64{0}, nil, pool, wire).i64); got != 123 {
+		t.Errorf("parseNum() = %d, want 123", got)
 	}
 }
 

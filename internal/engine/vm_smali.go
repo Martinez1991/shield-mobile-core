@@ -298,51 +298,72 @@ func VMClass(base string, wire []byte) *smali.Class {
 		li := label()
 		p("    const/16 v5, 0x%x", w(opInvokeStatic))
 		p("    if-ne v4, v5, %s", li)
-		readByte("v6") // owner pool idx
-		readByte("v7") // name pool idx
-		readByte("v8") // arg count
-		p("    move-object/16 v9, p3")
-		p("    aget-object v0, v9, v6")
+		readByte("v6") // ownerIdx
+		readByte("v7") // nameIdx
+		readByte("v9") // descIdx (Go model only; interpreter ignores)
+		readByte("v8") // argCount
+		p("    move-object/16 v13, p3")
+		p("    aget-object v0, v13, v6")
 		p("    invoke-static {v0}, Ljava/lang/Class;->forName(Ljava/lang/String;)Ljava/lang/Class;")
-		p("    move-result-object v0") // owner Class
-		// Class[] paramTypes = { Integer.TYPE, ... } (argCount entries)
-		p("    new-array v1, v8, [Ljava/lang/Class;")
+		p("    move-result-object v0")                  // owner Class (survives)
+		p("    aget-object v15, v13, v7")               // method name String (survives)
+		p("    new-array v1, v8, [Ljava/lang/Class;")   // paramTypes (survives)
+		p("    new-array v14, v8, [Ljava/lang/Object;") // args (survives)
+		p("    const/4 v5, 0x0")
+
+		loop, done := label(), label()
+		notInt, notLong, next := label(), label(), label()
+		p("    %s", loop)
+		p("    if-ge v5, v8, %s", done)
+		readByte("v6") // kind
+		readByte("v7") // reg
+		readByte("v9") // typeIdx
+		// int arg
+		p("    const/4 v13, 0x%x", invKindInt)
+		p("    if-ne v6, v13, %s", notInt)
 		p("    sget-object v12, Ljava/lang/Integer;->TYPE:Ljava/lang/Class;")
-		p("    const/4 v5, 0x0")
-		ptLoop, ptDone := label(), label()
-		p("    %s", ptLoop)
-		p("    if-ge v5, v8, %s", ptDone)
 		p("    aput-object v12, v1, v5")
+		p("    aget v13, v2, v7")
+		p("    invoke-static {v13}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;")
+		p("    move-result-object v12")
+		p("    aput-object v12, v14, v5")
+		p("    goto %s", next)
+		p("    %s", notInt)
+		// long arg
+		p("    const/4 v13, 0x%x", invKindLong)
+		p("    if-ne v6, v13, %s", notLong)
+		p("    sget-object v12, Ljava/lang/Long;->TYPE:Ljava/lang/Class;")
+		p("    aput-object v12, v1, v5")
+		p("    aget-wide v12, v10, v7")
+		p("    invoke-static {v12, v13}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;")
+		p("    move-result-object v12")
+		p("    aput-object v12, v14, v5")
+		p("    goto %s", next)
+		p("    %s", notLong)
+		// object arg: paramType = Class.forName(pool[typeIdx]); value = ro[reg]
+		p("    move-object/16 v13, p3")
+		p("    aget-object v12, v13, v9")
+		p("    invoke-static {v12}, Ljava/lang/Class;->forName(Ljava/lang/String;)Ljava/lang/Class;")
+		p("    move-result-object v12")
+		p("    aput-object v12, v1, v5")
+		p("    move-object/16 v13, v18")
+		p("    aget-object v12, v13, v7")
+		p("    aput-object v12, v14, v5")
+		p("    %s", next)
 		p("    add-int/lit8 v5, v5, 0x1")
-		p("    goto %s", ptLoop)
-		p("    %s", ptDone)
-		p("    aget-object v13, v9, v7") // method name
-		p("    invoke-virtual {v0, v13, v1}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;")
-		p("    move-result-object v0") // Method
-		// Object[] args = { Integer.valueOf(r[reg]), ... }
-		p("    new-array v1, v8, [Ljava/lang/Object;")
-		p("    const/4 v5, 0x0")
-		agLoop, agDone := label(), label()
-		p("    %s", agLoop)
-		p("    if-ge v5, v8, %s", agDone)
-		p("    aget-byte v6, v11, v3") // read next arg register index
-		p("    and-int/lit16 v6, v6, 0xff")
-		p("    add-int/lit8 v3, v3, 0x1")
-		p("    aget v7, v2, v6") // int value
-		p("    invoke-static {v7}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;")
-		p("    move-result-object v7")
-		p("    aput-object v7, v1, v5")
-		p("    add-int/lit8 v5, v5, 0x1")
-		p("    goto %s", agLoop)
-		p("    %s", agDone)
-		p("    const/4 v6, 0x0") // null receiver (static)
-		p("    invoke-virtual {v0, v6, v1}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+		p("    goto %s", loop)
+		p("    %s", done)
+		// resolve and invoke
+		p("    invoke-virtual {v0, v15, v1}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;")
+		p("    move-result-object v0")
+		p("    const/4 v13, 0x0") // null receiver (static)
+		p("    invoke-virtual {v0, v13, v14}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
 		p("    move-result-object v19") // pending result (boxed)
 		p("    goto :loop")
 		p("    %s", li)
 	}
 
-	// MOVE_RESULT dest: unbox the pending Integer result into an int register.
+	// MOVE_RESULT dest: unbox the pending Integer into an int register.
 	{
 		lm := label()
 		p("    const/16 v5, 0x%x", w(opMoveResult))
@@ -355,6 +376,34 @@ func VMClass(base string, wire []byte) *smali.Class {
 		p("    aput v7, v2, v6")
 		p("    goto :loop")
 		p("    %s", lm)
+	}
+
+	// MOVE_RESULT_WIDE dest: unbox the pending Long into a wide register.
+	{
+		lw := label()
+		p("    const/16 v5, 0x%x", w(opMoveResultWide))
+		p("    if-ne v4, v5, %s", lw)
+		readByte("v6")
+		p("    move-object/16 v0, v19")
+		p("    check-cast v0, Ljava/lang/Long;")
+		p("    invoke-virtual {v0}, Ljava/lang/Long;->longValue()J")
+		p("    move-result-wide v12")
+		p("    aput-wide v12, v10, v6")
+		p("    goto :loop")
+		p("    %s", lw)
+	}
+
+	// MOVE_RESULT_OBJ dest: store the pending object into an object register.
+	{
+		lo := label()
+		p("    const/16 v5, 0x%x", w(opMoveResultObj))
+		p("    if-ne v4, v5, %s", lo)
+		readByte("v6")
+		p("    move-object/16 v13, v18")
+		p("    move-object/16 v0, v19")
+		p("    aput-object v0, v13, v6")
+		p("    goto :loop")
+		p("    %s", lo)
 	}
 
 	// binary ops

@@ -7,7 +7,7 @@
 # Kept un-renamed (golden.Main) so app_process can name it.
 
 .method public static main([Ljava/lang/String;)V
-    .registers 5
+    .registers 7
     sget-object v0, Ljava/lang/System;->out:Ljava/io/PrintStream;
 
     const/4 v1, 0x3
@@ -113,6 +113,22 @@
     invoke-static {v1}, Lgolden/Logic;->tagAbs(I)Ljava/lang/String;
     move-result-object v1
     invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+
+    const-wide v1, 0x12a05f200L
+    const-wide v3, 0x3L
+    invoke-static {v1, v2, v3, v4}, Lgolden/Logic;->maxL(JJ)J
+    move-result-wide v1
+    invoke-virtual {v0, v1, v2}, Ljava/io/PrintStream;->println(J)V
+
+    const/16 v1, 0x2a
+    invoke-static {v1}, Lgolden/Logic;->strOf(I)Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+
+    const/4 v1, 0x0
+    invoke-static {v1}, Lgolden/Logic;->parseFixed(I)I
+    move-result v1
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(I)V
 
     return-void
 .end method
