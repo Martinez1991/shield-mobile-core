@@ -1,0 +1,33 @@
+{
+  "name": "golden",
+  "version": 1,
+  "seed": 12345,
+  "rename": {
+    "enabled": true,
+    "members": true,
+    "includePrefixes": ["golden"],
+    "keepClasses": ["golden.Main"]
+  },
+  "strings": {
+    "enabled": true,
+    "minLength": 2,
+    "algorithm": "aes"
+  },
+  "metadata": {
+    "enabled": true
+  },
+  "controlFlow": {
+    "enabled": true,
+    "reorder": true
+  },
+  "vm": {
+    "enabled": true
+  },
+  "junk": {
+    "enabled": true,
+    "nops": 3
+  },
+  "rasp": {
+    "enabled": false
+  }
+}

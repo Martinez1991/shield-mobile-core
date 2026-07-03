@@ -1,0 +1,59 @@
+name: correctness
+
+# Runtime correctness gate (issue #3): differential testing of golden apps on a
+# real Android emulator (ART). Assembles the original vs protected golden dex and
+# requires identical output via app_process. Runs on an emulator, so it is kept
+# separate from the fast required checks; promote to a required check once proven
+# stable across runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'internal/engine/**'
+      - 'testdata/golden/**'
+      - 'scripts/golden-diff.sh'
+      - '.github/workflows/correctness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden-diff:
+    name: golden differential (ART)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: download smali assembler
+        run: curl -sSL -o smali.jar "https://bitbucket.org/JesusFreke/smali/downloads/smali-2.5.2.jar"
+
+      - name: enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: run golden differential on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: SMALI_JAR="$PWD/smali.jar" bash scripts/golden-diff.sh
