@@ -77,6 +77,14 @@ func Run(root string) (*Report, error) {
 	return rep, nil
 }
 
+// LooksSecret reports whether a string value matches a known secret pattern or
+// is a high-entropy token — the same heuristic Run uses, exported so other passes
+// (e.g. the risk scorer, issue #65) can score sensitive-string density.
+func LooksSecret(val string) bool {
+	_, ok := classify("", val)
+	return ok
+}
+
 func classify(class, val string) (Finding, bool) {
 	for _, r := range secretRules {
 		if r.re.MatchString(val) {
