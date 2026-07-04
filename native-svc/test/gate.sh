@@ -49,9 +49,10 @@ run_case() {
   fi
 }
 
-run_case flatten     flatten
-run_case mba         mba
-run_case flatten+mba flatten mba
+run_case flatten         flatten
+run_case mba             mba
+run_case opaque          opaque
+run_case flatten+mba+opq flatten mba opaque
 
 # flatten must introduce the dispatcher.
 "$svc" transform --pass flatten < "$tmp/orig.bc" | "$CLANG" -S -emit-llvm -x ir - -o "$tmp/f.ll" 2>/dev/null || \

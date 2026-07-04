@@ -10,6 +10,7 @@
 // 4 verification failed.
 #include "Flatten.h"
 #include "MBA.h"
+#include "Opaque.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
@@ -83,6 +84,9 @@ int main(int argc, char **argv) {
     } else if (p == "mba") {
       for (Function &F : *mod)
         mbaFunction(F, seed);
+    } else if (p == "opaque") {
+      for (Function &F : *mod)
+        opaqueFunction(F, seed);
     } else {
       errs() << "native-svc: pass '" << p << "' not implemented yet\n";
       return 3;

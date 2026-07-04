@@ -26,7 +26,7 @@ fail=0
 
 echo "== HOST (execution gate) =="
 "$CLANG" -O0 -fPIC -shared "$lib" -o "$tmp/plain.so"
-bash "$protect" --cc "$CLANG" --passes "flatten mba" --seed 7 --arch host --out "$tmp/prot.so" "$lib"
+bash "$protect" --cc "$CLANG" --passes "flatten mba opaque" --seed 7 --arch host --out "$tmp/prot.so" "$lib"
 "$CLANG" "$here/lib-driver.c" -ldl -o "$tmp/driver"
 "$tmp/driver" "$tmp/plain.so" > "$tmp/plain.out"
 "$tmp/driver" "$tmp/prot.so"  > "$tmp/prot.out"
@@ -45,7 +45,7 @@ if [[ -n "$NDK" ]]; then
   ndkcc=$(ls "$NDK"/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android*-clang 2>/dev/null | sort -V | head -1 || true)
 fi
 if [[ -n "$ndkcc" && -x "$ndkcc" ]]; then
-  bash "$protect" --cc "$ndkcc" --passes "flatten mba" --seed 7 --arch arm64-v8a --out "$tmp/libsample.so" "$lib"
+  bash "$protect" --cc "$ndkcc" --passes "flatten mba opaque" --seed 7 --arch arm64-v8a --out "$tmp/libsample.so" "$lib"
   mach=$("$READELF" -h "$tmp/libsample.so" 2>/dev/null | awk -F: '/Machine/{gsub(/^ +/,"",$2);print $2}')
   typ=$("$READELF" -h "$tmp/libsample.so" 2>/dev/null | awk -F: '/Type/{gsub(/^ +/,"",$2);print $2}')
   echo "ndk-gate[android]: machine='$mach' type='$typ'"
