@@ -65,7 +65,7 @@ Usage:
   shield analyze   <smali-dir> [--json]
   shield obfuscate <smali-dir> --out <dir> [--policy p.json | --preset name]
                    [--in-place] [--mapping f] [--report f]
-  shield protect   <app.apk|app.aab> --out <f> [--policy p.json | --preset name]
+  shield protect   <app.apk|.aab|.ipa> --out <f> [--policy p.json | --preset name]
                    [--ks keystore --ks-pass p --ks-alias a]
   shield policy    show <preset> | validate <policy.json>
   shield retrace   <mapping.txt> [trace-file]   (trace on stdin if omitted)

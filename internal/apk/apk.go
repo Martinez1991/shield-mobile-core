@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"shield/internal/engine"
+	"shield/internal/ios"
 	"shield/internal/policy"
 )
 
@@ -73,6 +74,10 @@ func (o Options) logf(format string, a ...any) {
 func Protect(o Options) (*engine.Result, error) {
 	if IsAAB(o.Input) {
 		return protectAAB(o)
+	}
+	if ios.IsIPA(o.Input) {
+		return nil, fmt.Errorf("iOS/IPA recognized, but Mach-O protection is not available yet " +
+			"(the pipeline is in progress — see issue #63). Android APK/AAB is supported today")
 	}
 	if !ToolAvailable("apktool") {
 		return nil, fmt.Errorf("apktool not found on PATH.\n" +
