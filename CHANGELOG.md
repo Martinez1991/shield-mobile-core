@@ -3,6 +3,19 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
+## [Unreleased]
+
+- **`shield analyze <app.ipa|.apk|.aab>`** now inspects the binaries inside an app
+  artifact — Mach-O (IPA) and ELF `.so` (APK/AAB) — reporting architecture,
+  structure and secret-string density (`internal/inspect`, #87). Read-only,
+  stdlib-only.
+- **Native LLVM protection — architecture** ([ADR 0004](docs/adr/0004-llvm-native-svc.md), #82):
+  LLVM passes will ship as an out-of-tree `native-svc` subprocess (never linked;
+  `go.mod`/engine unchanged, CGO-free). `internal/nativesvc` fixes the Go seam —
+  pass model, policy `native` section, `native-svc` discovery with a typed
+  `ErrUnavailable`, the subprocess contract (injectable runner), and an offline
+  `Plan`. The `native-svc` executable and its execution gate are deferred.
+
 ## [0.3.0] — 2026-07-03
 
 Risk-driven protection (the AI risk-map v0) plus the analysis foundations for iOS
