@@ -1,6 +1,7 @@
 // Command shield is the SHIELD platform CLI (shield-platform.md section 12).
 //
-//	shield analyze  <smali-dir>            static inventory + sensitive-code report
+//	shield analyze  <smali-dir|app.ipa|.apk|.aab>  static inventory + sensitive-code report
+//	                                       (a binary artifact reports Mach-O/ELF structure)
 //	shield obfuscate <smali-dir> --out ... apply protection passes to a smali project
 //	shield protect  <app.apk|.aab> --out ... full round-trip (apktool / baksmali+smali)
 //	shield policy   show|validate ...      policy-as-code helpers
@@ -24,6 +25,7 @@ import (
 	"shield/internal/apk"
 	"shield/internal/cache"
 	"shield/internal/engine"
+	"shield/internal/inspect"
 	"shield/internal/obs"
 	"shield/internal/policy"
 	"shield/internal/retrace"
@@ -85,6 +87,10 @@ func cmdAnalyze(args []string) {
 		die(20, "analyze: missing <smali-dir> (must be the first argument)")
 	}
 	_ = fs.Parse(rest)
+	if isBinaryArtifact(subject) {
+		analyzeBinary(subject, *asJSON)
+		return
+	}
 	rep, err := analyze.Run(subject)
 	if err != nil {
 		die(10, "analyze: %v", err)
@@ -101,6 +107,41 @@ func cmdAnalyze(args []string) {
 	fmt.Printf("Sensitive findings: %d\n", len(rep.Findings))
 	for _, f := range rep.Findings {
 		fmt.Printf("  [%-18s] %-40s %s (entropy %.2f)\n", f.Kind, dotted(f.Class), f.Preview, f.Entropy)
+	}
+}
+
+// isBinaryArtifact reports whether subject is a binary app artifact (IPA/APK/AAB)
+// rather than a smali directory — routing analyze to the binary inspector (#87).
+func isBinaryArtifact(subject string) bool {
+	if fi, err := os.Stat(subject); err != nil || fi.IsDir() {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(subject)) {
+	case ".ipa", ".apk", ".aab":
+		return true
+	}
+	return false
+}
+
+// analyzeBinary inspects an IPA/APK/AAB and reports each contained binary's
+// architecture, structure and secret-string density (#87). Read-only.
+func analyzeBinary(subject string, asJSON bool) {
+	rep, err := inspect.Analyze(subject)
+	if err != nil {
+		die(10, "analyze: %v", err)
+	}
+	if asJSON {
+		printJSON(rep)
+		return
+	}
+	fmt.Printf("Artifact: %s (%s)  Binaries: %d\n", filepath.Base(rep.Path), rep.Kind, len(rep.Binaries))
+	if len(rep.Binaries) == 0 {
+		fmt.Println("No inspectable binaries found")
+		return
+	}
+	for _, b := range rep.Binaries {
+		fmt.Printf("  [%-7s %-11s] %-40s sections %-3d symbols %-5d secrets %d\n",
+			b.Arch, b.Type, b.Entry, b.Sections, b.Symbols, b.SecretStrings)
 	}
 }
 
