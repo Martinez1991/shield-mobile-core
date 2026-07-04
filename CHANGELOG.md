@@ -9,12 +9,15 @@ versions are git tags with a matching GitHub release.
   artifact — Mach-O (IPA) and ELF `.so` (APK/AAB) — reporting architecture,
   structure and secret-string density (`internal/inspect`, #87). Read-only,
   stdlib-only.
-- **Native LLVM protection — architecture** ([ADR 0004](docs/adr/0004-llvm-native-svc.md), #82):
-  LLVM passes will ship as an out-of-tree `native-svc` subprocess (never linked;
-  `go.mod`/engine unchanged, CGO-free). `internal/nativesvc` fixes the Go seam —
+- **Native LLVM protection** ([ADR 0004](docs/adr/0004-llvm-native-svc.md), #82):
+  LLVM passes ship as an out-of-tree `native-svc` subprocess (never linked;
+  `go.mod`/engine unchanged, CGO-free). `internal/nativesvc` is the Go seam —
   pass model, policy `native` section, `native-svc` discovery with a typed
   `ErrUnavailable`, the subprocess contract (injectable runner), and an offline
-  `Plan`. The `native-svc` executable and its execution gate are deferred.
+  `Plan`. The `native-svc` executable now implements **control-flow flattening**
+  over LLVM bitcode, verified by an **execution gate** (`native-svc/test/gate.sh`,
+  `native` CI workflow) proving the flattened program is functionally identical.
+  `mba`/`opaque`/`strings` are declared in the contract and error until built.
 
 ## [0.3.0] — 2026-07-03
 

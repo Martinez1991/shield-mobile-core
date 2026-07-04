@@ -73,11 +73,17 @@ seam — pass model, policy `native` section, `native-svc` discovery/`ErrUnavail
 subprocess request/response framing with an injectable runner, and an
 offline `Plan` over an APK/AAB (which `.so` are candidates, reusing #81).
 
-**Deferred (needs the LLVM toolchain / a native build host):** the `native-svc`
-executable itself (the C++ LLVM passes) and the **execution gate** proving an
-object is functionally identical after a pass (#82's acceptance criterion). These
-are tracked as follow-up work; this ADR unblocks their architecture, it does not
-implement them.
+**Delivered since (needs the LLVM toolchain, so gated in the `native` CI
+workflow, not the Go CI):** the `native-svc` executable with **control-flow
+flattening** over LLVM bitcode (`native-svc/`, built out-of-tree with LLVM 18),
+and its **execution gate** (`native-svc/test/gate.sh`) — the #82 acceptance
+criterion: a bitcode program is flattened and proven functionally identical by
+compiling and diffing its output. Determinism-per-seed and the contract exit
+codes are covered too.
+
+**Still deferred:** the remaining passes (`mba`, `opaque`, `strings` — declared
+in the contract, they error until implemented) and wiring `native-svc` into the
+worker's compile→transform→link flow for real APKs (needs the NDK path, #64).
 
 ## Consequences
 

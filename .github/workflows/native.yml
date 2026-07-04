@@ -1,0 +1,44 @@
+name: native
+
+# LLVM native-svc build + execution gate (issue #82, ADR 0004). Installs LLVM 18
+# and Clang, builds the out-of-tree native-svc, and runs the flattening execution
+# gate: a bitcode program is flattened and must stay functionally identical. Kept
+# separate from the fast Go checks since it provisions the LLVM toolchain.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native-svc/**'
+      - '.github/workflows/native.yml'
+  pull_request:
+    paths:
+      - 'native-svc/**'
+      - '.github/workflows/native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-gate:
+    name: build + execution gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev clang-18 cmake ninja-build \
+            build-essential zlib1g-dev libzstd-dev libtinfo-dev libedit-dev
+
+      - name: Configure
+        run: cmake -S native-svc -B native-svc/build -G Ninja
+             -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm
+
+      - name: Build
+        run: cmake --build native-svc/build
+
+      - name: Execution gate (flatten stays functionally identical)
+        run: bash native-svc/test/gate.sh
