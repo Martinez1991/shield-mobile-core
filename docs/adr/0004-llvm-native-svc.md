@@ -1,0 +1,90 @@
+# ADR 0004 — LLVM-based native protection as an out-of-tree subprocess (`native-svc`)
+
+- Status: Accepted
+- Date: 2026-07-04
+- Issue: [#82](https://github.com/Martinez1991/shield-platform/issues/82)
+- Related: [#64](https://github.com/Martinez1991/shield-platform/issues/64) (native epic), [#18](https://github.com/Martinez1991/shield-platform/issues/18) (sandboxed worker), [ADR 0002](0002-nats-queue.md), [ADR 0003](0003-otlp-tracing.md)
+
+## Context
+
+Android apps ship native code as ELF `.so` under `lib/<abi>/` (inspected read-only
+by `internal/native`, #81). The strongest native obfuscation — CFG flattening,
+mixed boolean-arithmetic (MBA), opaque predicates, native string/const
+encryption — is done with **LLVM passes**, which are C++ against the LLVM pass
+API. That is a different language and a heavy build toolchain (LLVM/Clang), and it
+operates on bitcode/objects, not on our Go data structures.
+
+Two hard constraints frame the decision:
+
+- The **engine is stdlib-only and deterministic** (ADR 0001) and must stay that
+  way — the golden/ART gate depends on it. Nothing here may reach the engine.
+- Unlike NATS (ADR 0002) and OTel (ADR 0003), an LLVM pass **cannot be a Go
+  module dependency**. There is no pure-Go LLVM; a linked binding needs CGO + a
+  local LLVM. Adding that to `go.mod`/CGO would compromise the reproducible,
+  cross-compilable, zero-CGO build of the whole platform.
+
+## Decision
+
+**Ship native LLVM protection as a separate out-of-tree executable, `native-svc`,
+invoked as a subprocess from the sandboxed worker — never linked into the Go
+build. Model it in Go behind a thin seam (`internal/nativesvc`), exactly as
+`internal/apk` already shells out to `apktool`/`apksigner`.**
+
+- `go.mod` gains **nothing**. `go build ./...` links no LLVM. The engine's
+  dependency graph and the golden/ART gate are untouched.
+- `native-svc` is discovered on PATH (or via `$SHIELD_NATIVE_SVC`). When absent,
+  callers get a **typed `ErrUnavailable`** and degrade gracefully — the Android
+  DEX pipeline is unaffected — mirroring the "apktool not found" path.
+- It runs inside the existing no-egress, gVisor-sandboxed worker (#18): the
+  toolchain never touches the control plane or the network.
+
+### The subprocess contract (what `native-svc` must implement)
+
+A single object in, a single object out, passes selected by flags:
+
+```
+native-svc transform --arch <abi> --pass <p> [--pass <p> …]   < object.o  > object.o
+```
+
+- reads the object/bitcode on **stdin**, writes the transformed object to
+  **stdout**, diagnostics on **stderr**, non-zero exit on failure;
+- is **deterministic** given the same input, passes and a per-build seed
+  (`--seed`), so a protected build stays reproducible.
+
+`internal/nativesvc` owns this contract on the Go side (request framing, pass
+selection from policy, subprocess execution with an injectable runner for tests),
+so `native-svc` can be built and swapped independently.
+
+### Why a subprocess, not a CGO binding or a network service
+
+- **Subprocess** keeps `go.mod`/CGO pristine, matches the existing `apktool`
+  idiom, and isolates a crash/miscompile in the LLVM toolchain from the Go
+  process. This is the choice.
+- **CGO binding** would force LLVM onto every build host and break the zero-CGO,
+  cross-compiled release. Rejected.
+- **Network microservice** adds egress and a deployment surface the no-egress
+  worker forbids; a local exec is simpler and stays inside the sandbox. Rejected
+  for now (a co-located service is a later scaling option, same contract).
+
+## Scope delivered here vs. deferred
+
+**Delivered (Go, offline-testable, zero-dep):** the ADR, the `internal/nativesvc`
+seam — pass model, policy `native` section, `native-svc` discovery/`ErrUnavailable`,
+subprocess request/response framing with an injectable runner, and an
+offline `Plan` over an APK/AAB (which `.so` are candidates, reusing #81).
+
+**Deferred (needs the LLVM toolchain / a native build host):** the `native-svc`
+executable itself (the C++ LLVM passes) and the **execution gate** proving an
+object is functionally identical after a pass (#82's acceptance criterion). These
+are tracked as follow-up work; this ADR unblocks their architecture, it does not
+implement them.
+
+## Consequences
+
+- No change to `go.mod`, the engine, or the golden/ART gate. The platform still
+  builds with zero CGO and cross-compiles.
+- The worker gains an optional native stage that is a no-op (typed skip) unless
+  `native-svc` is installed in its image; deploying it is an image/infra decision,
+  not a code dependency.
+- `internal/nativesvc` fixes the boundary so the C++ side can be developed against
+  a stable Go-side contract, tested here today with a fake runner.

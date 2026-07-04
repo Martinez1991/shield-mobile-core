@@ -48,6 +48,14 @@ type Policy struct {
 		Threshold float64 `json:"threshold"` // [0,1); methods below are left untouched
 	} `json:"risk"`
 
+	// Native (issue #82, ADR 0004). LLVM obfuscation of ELF .so via the
+	// out-of-tree native-svc subprocess. Enabled is a no-op unless native-svc is
+	// installed in the worker image; the engine/DEX pipeline is unaffected.
+	Native struct {
+		Enabled bool     `json:"enabled"`
+		Passes  []string `json:"passes"` // flatten|mba|opaque|strings
+	} `json:"native"`
+
 	// RASP (section 6). Injects the Lshield/rt/RASP; runtime (root/debugger/
 	// emulator detection with deferred reaction). It is a library the host/app
 	// can call; wiring it into entry points is app-specific.
