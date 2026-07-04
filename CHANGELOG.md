@@ -14,10 +14,11 @@ versions are git tags with a matching GitHub release.
   `go.mod`/engine unchanged, CGO-free). `internal/nativesvc` is the Go seam —
   pass model, policy `native` section, `native-svc` discovery with a typed
   `ErrUnavailable`, the subprocess contract (injectable runner), and an offline
-  `Plan`. The `native-svc` executable now implements **control-flow flattening**
-  over LLVM bitcode, verified by an **execution gate** (`native-svc/test/gate.sh`,
-  `native` CI workflow) proving the flattened program is functionally identical.
-  `mba`/`opaque`/`strings` are declared in the contract and error until built.
+  `Plan`. The `native-svc` executable implements **control-flow flattening** and
+  **mixed boolean-arithmetic (MBA)** substitution over LLVM bitcode, composable,
+  each verified by an **execution gate** (`native-svc/test/gate.sh`, `native` CI
+  workflow) proving the transformed program is functionally identical.
+  `opaque`/`strings` are declared in the contract and error until built.
 
 ## [0.3.0] — 2026-07-03
 

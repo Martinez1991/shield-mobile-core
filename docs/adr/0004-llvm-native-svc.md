@@ -75,15 +75,16 @@ offline `Plan` over an APK/AAB (which `.so` are candidates, reusing #81).
 
 **Delivered since (needs the LLVM toolchain, so gated in the `native` CI
 workflow, not the Go CI):** the `native-svc` executable with **control-flow
-flattening** over LLVM bitcode (`native-svc/`, built out-of-tree with LLVM 18),
-and its **execution gate** (`native-svc/test/gate.sh`) — the #82 acceptance
-criterion: a bitcode program is flattened and proven functionally identical by
-compiling and diffing its output. Determinism-per-seed and the contract exit
-codes are covered too.
+flattening** and **mixed boolean-arithmetic (MBA)** substitution over LLVM
+bitcode (`native-svc/`, built out-of-tree with LLVM 18), composable, and their
+**execution gate** (`native-svc/test/gate.sh`) — the #82 acceptance criterion:
+each pass (and the composition) transforms the bitcode and is proven functionally
+identical by compiling and diffing its output. Determinism-per-seed and the
+contract exit codes are covered too.
 
-**Still deferred:** the remaining passes (`mba`, `opaque`, `strings` — declared
-in the contract, they error until implemented) and wiring `native-svc` into the
-worker's compile→transform→link flow for real APKs (needs the NDK path, #64).
+**Still deferred:** the remaining passes (`opaque`, `strings` — declared in the
+contract, they error until implemented) and wiring `native-svc` into the worker's
+compile→transform→link flow for real APKs (needs the NDK path, #64).
 
 ## Consequences
 

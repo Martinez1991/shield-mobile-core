@@ -9,6 +9,7 @@
 // passes and seed. Exit codes: 0 ok, 1 I/O/parse, 2 usage, 3 unknown pass,
 // 4 verification failed.
 #include "Flatten.h"
+#include "MBA.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
@@ -79,6 +80,9 @@ int main(int argc, char **argv) {
     if (p == "flatten") {
       for (Function &F : *mod)
         flattenFunction(F, seed);
+    } else if (p == "mba") {
+      for (Function &F : *mod)
+        mbaFunction(F, seed);
     } else {
       errs() << "native-svc: pass '" << p << "' not implemented yet\n";
       return 3;
