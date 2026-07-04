@@ -3,6 +3,37 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
+## [0.3.0] — 2026-07-03
+
+Risk-driven protection (the AI risk-map v0) plus the analysis foundations for iOS
+and native code. The engine stays pure Go / stdlib-only and deterministic — the
+new binary inspectors use only `debug/macho` and `debug/elf`.
+
+### Risk-driven Planner (AI risk-map v0, #65)
+- `internal/risk`: deterministic per-method static features (complexity, sensitive
+  calls to crypto/keystore/net/reflection, secret-string density) over the typed
+  IR, and an explainable heuristic score — no ML (#67, #68).
+- Policy `risk.enabled` + `risk.threshold`: the expensive passes (VM, flattening)
+  only transform methods above the threshold, concentrating cost on the hot spots
+  instead of uniformly (#69). Default (risk off) is byte-for-byte unchanged and
+  ART-green.
+- `Result.RiskMap`: per-method score, reasons and protect decision, for audit (#70).
+
+### iOS foundation (#63)
+- `internal/ios`: IPA detection, app-bundle/binary/framework location, and a
+  byte-preserving IPA repack (#74); Mach-O inspection over `debug/macho` —
+  segments, sections, symbols, architecture, and `__cstring` secret density (#75).
+  `apk.Protect` recognizes an IPA with a clear "not yet available" message.
+
+### Native (Android .so) foundation (#64)
+- `internal/native`: ELF `.so` inspection over `debug/elf` — sections, symbols,
+  machine, and `.rodata` secret density; `lib/<abi>/*.so` classification and
+  whole-archive inspection (#81).
+
+> The invasive native/iOS transforms (LLVM passes, native/Mach-O code injection,
+> re-signing) and their execution gates are decomposed as follow-up sub-issues;
+> they need an external toolchain and macOS/native infra and are deferred.
+
 ## [0.2.0] — 2026-07-03
 
 Expanded code virtualization on a new typed IR, Android App Bundle support, and
@@ -68,6 +99,7 @@ straight-line integer code virtualization, RASP injection, policy-as-code, the
 CLI (`analyze`/`obfuscate`/`protect`/`policy`/`retrace`), and the golden/ART
 runtime-correctness gate.
 
+[0.3.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.1.0
 [Keep a Changelog]: https://keepachangelog.com/

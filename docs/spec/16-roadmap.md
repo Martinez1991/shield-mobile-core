@@ -23,6 +23,14 @@ Além do MVP (v0.1.0: engine rename/strings/control-flow, gate de corretude gold
 
 > Duas dependências externas foram introduzidas de forma disciplinada (NATS, OTel), confinadas a um pacote; o **núcleo do engine permanece stdlib-only e determinístico**.
 
+### v0.3.0 (entregue) — proteção risk-driven + fundações iOS/nativo
+
+- **Planner risk-driven** (AI risk-map v0, épico [#65](https://github.com/Martinez1991/shield-platform/issues/65)) — features estáticas por método sobre a IR tipada + score heurístico explicável; VM/flattening só nos hot spots acima do threshold; `Result.RiskMap` auditável. Zero-dep, sem ML.
+- **Fundação iOS** ([#63](https://github.com/Martinez1991/shield-platform/issues/63)) — detecção/round-trip de IPA (#74) + inspeção Mach-O via `debug/macho` (#75).
+- **Fundação nativa** ([#64](https://github.com/Martinez1991/shield-platform/issues/64)) — inspeção de `.so` ELF via `debug/elf` (#81).
+
+> A inspeção binária dos três formatos (Dalvik/IR, Mach-O, ELF) é **stdlib-only**. Os transforms invasivos (LLVM, injeção nativa, re-assinatura) e seus gates de execução ficam adiados (dep. de toolchain/infra), decompostos como sub-issues.
+
 ## Marcos de qualidade
 - **M1 (fim MVP):** UX ≥ 7/10; corretude 100% golden apps; nota geral do committee ≥ 6.
 - **M2 (fim V1):** SLA 99.9% control plane; SCA/SAST sem high; SBOM por release.
