@@ -40,5 +40,9 @@ jobs:
       - name: Build
         run: cmake --build native-svc/build
 
-      - name: Execution gate (flatten stays functionally identical)
+      - name: Execution gate (passes stay functionally identical)
         run: bash native-svc/test/gate.sh
+
+      - name: End-to-end native-lib gate (host run + arm64 Android build)
+        # ANDROID_NDK_LATEST_HOME is preset on the runner; ndk-gate.sh reads it.
+        run: bash native-svc/test/ndk-gate.sh

@@ -82,9 +82,16 @@ each pass (and the composition) transforms the bitcode and is proven functionall
 identical by compiling and diffing its output. Determinism-per-seed and the
 contract exit codes are covered too.
 
+The compile→transform→link flow is realized in `native-svc/tools/protect-so.sh`
+and gated end-to-end by `native-svc/test/ndk-gate.sh`: the host path `dlopen`s and
+runs the protected `.so` (functional identity), and — with the Android NDK — the
+same flow builds a real **arm64 Android `.so`** (structural gate; running it needs
+an emulator). LLVM 18-written bitcode links cleanly with the NDK's clang.
+
 **Still deferred:** the remaining passes (`opaque`, `strings` — declared in the
-contract, they error until implemented) and wiring `native-svc` into the worker's
-compile→transform→link flow for real APKs (needs the NDK path, #64).
+contract, they error until implemented), an on-device/emulator **execution** gate
+for the arm64 artifact, and driving this from the Go worker on a real APK's
+recompilable native module (#64).
 
 ## Consequences
 

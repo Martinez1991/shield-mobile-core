@@ -19,6 +19,10 @@ versions are git tags with a matching GitHub release.
   each verified by an **execution gate** (`native-svc/test/gate.sh`, `native` CI
   workflow) proving the transformed program is functionally identical.
   `opaque`/`strings` are declared in the contract and error until built.
+  An **end-to-end native-library flow** (`tools/protect-so.sh`) compiles source →
+  bitcode → `native-svc` → `.so`; `test/ndk-gate.sh` `dlopen`s and runs the
+  protected host `.so` (functional identity) and, with the Android NDK, builds a
+  real **arm64 Android `.so`** through the same flow.
 
 ## [0.3.0] — 2026-07-03
 

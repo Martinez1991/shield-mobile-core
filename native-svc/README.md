@@ -50,3 +50,16 @@ The worker compiles a recompilable native source/bitcode → `.bc`, pipes it
 through `native-svc`, then compiles `.bc` → `.so`. Pre-linked, stripped `.so`
 without bitcode cannot be flattened (LLVM passes need IR), which is why this
 operates on bitcode, as ADR 0004 anticipated.
+
+`tools/protect-so.sh` is the reference compile→transform→link for that flow (pass
+`--cc` a host `clang` or an NDK per-ABI wrapper). The end-to-end gate is:
+
+```bash
+ANDROID_NDK_HOME=/path/to/ndk native-svc/test/ndk-gate.sh
+```
+
+It protects `test/libsample.c` through the full flow and (a) on the **host**
+`dlopen`s and calls the protected `.so`, diffing against the unprotected one —
+functional identity on a runnable target; (b) with the **NDK**, builds a real
+arm64 Android `.so` and asserts it is a valid AArch64 shared object (not executed
+on an x86 host without an emulator, so a structural check).
