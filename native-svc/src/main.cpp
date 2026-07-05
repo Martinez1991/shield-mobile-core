@@ -11,6 +11,7 @@
 #include "Flatten.h"
 #include "MBA.h"
 #include "Opaque.h"
+#include "Strings.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
@@ -87,6 +88,8 @@ int main(int argc, char **argv) {
     } else if (p == "opaque") {
       for (Function &F : *mod)
         opaqueFunction(F, seed);
+    } else if (p == "strings") {
+      stringsModule(*mod, seed); // module-level: encrypts globals + adds a ctor
     } else {
       errs() << "native-svc: pass '" << p << "' not implemented yet\n";
       return 3;

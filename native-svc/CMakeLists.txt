@@ -40,6 +40,7 @@ add_executable(native-svc
   src/Flatten.cpp
   src/MBA.cpp
   src/Opaque.cpp
+  src/Strings.cpp
 )
 
 llvm_map_components_to_libnames(llvm_libs

@@ -49,10 +49,23 @@ run_case() {
   fi
 }
 
-run_case flatten         flatten
-run_case mba             mba
-run_case opaque          opaque
-run_case flatten+mba+opq flatten mba opaque
+run_case flatten             flatten
+run_case mba                 mba
+run_case opaque              opaque
+run_case strings             strings
+run_case flatten+mba+opq+str flatten mba opaque strings
+
+# strings-specific: the plaintext must be gone from the encrypted binary yet
+# present in its runtime output (the decryptor restores it at load).
+"$svc" transform --pass strings < "$tmp/orig.bc" > "$tmp/s.bc"
+"$CLANG" "$tmp/s.bc" -o "$tmp/s" -O0
+if grep -aq 'classify(' "$tmp/s"; then
+  echo "gate[strings]: FAIL — plaintext 'classify(' still in the binary"; fail=1
+else
+  echo "gate[strings]: plaintext absent from encrypted binary"
+fi
+"$tmp/s" > "$tmp/s.out"
+grep -q 'classify(' "$tmp/s.out" && echo "gate[strings]: plaintext restored at runtime" || { echo "gate[strings]: FAIL — runtime output missing plaintext"; fail=1; }
 
 # flatten must introduce the dispatcher.
 "$svc" transform --pass flatten < "$tmp/orig.bc" | "$CLANG" -S -emit-llvm -x ir - -o "$tmp/f.ll" 2>/dev/null || \

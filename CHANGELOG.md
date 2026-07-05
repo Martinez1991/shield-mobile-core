@@ -14,13 +14,14 @@ versions are git tags with a matching GitHub release.
   `go.mod`/engine unchanged, CGO-free). `internal/nativesvc` is the Go seam —
   pass model, policy `native` section, `native-svc` discovery with a typed
   `ErrUnavailable`, the subprocess contract (injectable runner), and an offline
-  `Plan`. The `native-svc` executable implements **control-flow flattening**,
-  **mixed boolean-arithmetic (MBA)** substitution and **opaque predicates**
-  (always-true, via a volatile global, guarding bogus junk blocks) over LLVM
-  bitcode, composable, each verified by an **execution gate**
+  `Plan`. The `native-svc` executable implements four composable passes over LLVM
+  bitcode — **control-flow flattening**, **mixed boolean-arithmetic (MBA)**
+  substitution, **opaque predicates** (always-true, via a volatile global,
+  guarding bogus junk blocks) and **string encryption** (XOR local literals with
+  a load-time decryptor) — each verified by an **execution gate**
   (`native-svc/test/gate.sh`, `native` CI workflow) proving the transformed
-  program is functionally identical. `strings` is declared in the contract and
-  errors until built.
+  program is functionally identical (the strings gate also asserts the plaintext
+  is absent from the binary and restored at runtime).
   An **end-to-end native-library flow** (`tools/protect-so.sh`) compiles source →
   bitcode → `native-svc` → `.so`; `test/ndk-gate.sh` `dlopen`s and runs the
   protected host `.so` (functional identity) and, with the Android NDK, builds a

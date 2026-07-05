@@ -88,8 +88,10 @@ runs the protected `.so` (functional identity), and — with the Android NDK —
 same flow builds a real **arm64 Android `.so`** (structural gate; running it needs
 an emulator). LLVM 18-written bitcode links cleanly with the NDK's clang.
 
-**Still deferred:** the remaining pass (`strings` — declared in the contract, it
-errors until implemented), an on-device/emulator **execution** gate for the arm64
+All four contract passes (`flatten`, `mba`, `opaque`, `strings`) are now
+implemented and composable, each covered by the execution gate.
+
+**Still deferred:** an on-device/emulator **execution** gate for the arm64
 artifact, and driving this from the Go worker on a real APK's recompilable native
 module (#64).
 

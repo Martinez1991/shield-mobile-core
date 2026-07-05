@@ -15,10 +15,11 @@ native-svc transform --arch <abi> --seed <n> --pass <p> [--pass <p> ...]  < in.b
 Reads LLVM bitcode/IR on stdin, applies the passes, verifies the module, writes
 bitcode on stdout. Deterministic given the same input, passes and seed.
 
-Passes: `flatten` (control-flow flattening), `mba` (mixed boolean-arithmetic
-substitution) and `opaque` (always-true opaque predicates + bogus junk blocks)
-are implemented and can be composed; `strings` is declared in the contract and
-returns "not implemented yet" (exit 3) until built — never a silent no-op.
+Passes (all implemented and composable): `flatten` (control-flow flattening),
+`mba` (mixed boolean-arithmetic substitution), `opaque` (always-true opaque
+predicates + bogus junk blocks) and `strings` (XOR-encrypt local string literals
+with a load-time decryptor). An unknown pass errors (exit 3) — never a silent
+no-op.
 
 ## Build (Ubuntu 24.04 / WSL2)
 
