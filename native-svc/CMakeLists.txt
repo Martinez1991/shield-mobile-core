@@ -40,6 +40,7 @@ add_executable(native-svc
   src/Flatten.cpp
   src/MBA.cpp
   src/Opaque.cpp
+  src/Rasp.cpp
   src/Strings.cpp
 )
 

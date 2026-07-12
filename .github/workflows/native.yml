@@ -51,3 +51,6 @@ jobs:
 
       - name: arm64 execution gate (protected arm64 runs identically, under qemu)
         run: bash native-svc/test/arm64-exec-gate.sh
+
+      - name: RASP gate (anti-debug silent normally, fires under a tracer)
+        run: bash native-svc/test/rasp-gate.sh

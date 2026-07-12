@@ -28,10 +28,13 @@ const (
 	PassMBA     Pass = "mba"     // mixed boolean-arithmetic substitution
 	PassOpaque  Pass = "opaque"  // opaque predicates
 	PassStrings Pass = "strings" // native string / const obfuscation
+	PassRasp    Pass = "rasp"    // runtime anti-debug injection
 )
 
 // validPasses is the set native-svc understands; ParsePasses rejects the rest.
-var validPasses = map[Pass]bool{PassFlatten: true, PassMBA: true, PassOpaque: true, PassStrings: true}
+var validPasses = map[Pass]bool{
+	PassFlatten: true, PassMBA: true, PassOpaque: true, PassStrings: true, PassRasp: true,
+}
 
 // ErrUnavailable means native-svc (the LLVM toolchain) is not installed. It is
 // typed so callers can degrade (skip native passes) instead of hard-failing.

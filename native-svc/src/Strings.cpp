@@ -46,8 +46,8 @@ bool stringsModule(Module &M, uint64_t seed) {
   for (GlobalVariable &G : M.globals()) {
     if (!G.hasInitializer() || !G.isConstant() || !G.hasLocalLinkage())
       continue;
-    if (G.getName().starts_with("llvm."))
-      continue;
+    if (G.getName().starts_with("llvm.") || G.getName().starts_with("__shield"))
+      continue; // skip LLVM metadata and our own runtime globals (e.g. RASP)
     auto *init = dyn_cast<ConstantDataArray>(G.getInitializer());
     if (!init || !init->getElementType()->isIntegerTy(8))
       continue;

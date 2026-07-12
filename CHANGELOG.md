@@ -3,6 +3,17 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
+## [Unreleased]
+
+- **Native RASP — anti-debug** (`native-svc` `rasp` pass, #84): injects a load-time
+  check (reads `/proc/self/status` TracerPid via libc) that exits the process if a
+  debugger is attached and is silent otherwise, so an undebugged run stays
+  functionally identical. Its globals are named `__shield_*` so the `strings` pass
+  skips them. `native-svc/test/rasp-gate.sh` proves both properties with a
+  self-contained `ptrace` tracer (no strace/gdb needed), including the full
+  `rasp+flatten+mba+opaque+strings` composition. Anti-tamper (section checksum)
+  needs a post-link patch step and stays deferred.
+
 ## [0.4.0] — 2026-07-05
 
 Native code protection via an out-of-tree LLVM toolchain, plus binary analysis in

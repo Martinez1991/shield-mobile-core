@@ -11,6 +11,7 @@
 #include "Flatten.h"
 #include "MBA.h"
 #include "Opaque.h"
+#include "Rasp.h"
 #include "Strings.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -90,6 +91,8 @@ int main(int argc, char **argv) {
         opaqueFunction(F, seed);
     } else if (p == "strings") {
       stringsModule(*mod, seed); // module-level: encrypts globals + adds a ctor
+    } else if (p == "rasp") {
+      raspModule(*mod, seed); // module-level: injects an anti-debug ctor
     } else {
       errs() << "native-svc: pass '" << p << "' not implemented yet\n";
       return 3;

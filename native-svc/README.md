@@ -17,9 +17,10 @@ bitcode on stdout. Deterministic given the same input, passes and seed.
 
 Passes (all implemented and composable): `flatten` (control-flow flattening),
 `mba` (mixed boolean-arithmetic substitution), `opaque` (always-true opaque
-predicates + bogus junk blocks) and `strings` (XOR-encrypt local string literals
-with a load-time decryptor). An unknown pass errors (exit 3) — never a silent
-no-op.
+predicates + bogus junk blocks), `strings` (XOR-encrypt local string literals
+with a load-time decryptor) and `rasp` (runtime anti-debug: a load-time check of
+`/proc/self/status` TracerPid that exits the process if a debugger is attached,
+silent otherwise). An unknown pass errors (exit 3) — never a silent no-op.
 
 ## Build (Ubuntu 24.04 / WSL2)
 
