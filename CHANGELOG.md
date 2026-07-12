@@ -3,7 +3,12 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
-## [Unreleased]
+## [0.4.0] — 2026-07-05
+
+Native code protection via an out-of-tree LLVM toolchain, plus binary analysis in
+the CLI. The Go engine is unchanged — stdlib-only, deterministic, CGO-free, and
+the golden/ART gate stays green; the new native work lives entirely in the
+`native-svc` subprocess and its Go seam.
 
 - **`shield analyze <app.ipa|.apk|.aab>`** now inspects the binaries inside an app
   artifact — Mach-O (IPA) and ELF `.so` (APK/AAB) — reporting architecture,
@@ -25,7 +30,9 @@ versions are git tags with a matching GitHub release.
   An **end-to-end native-library flow** (`tools/protect-so.sh`) compiles source →
   bitcode → `native-svc` → `.so`; `test/ndk-gate.sh` `dlopen`s and runs the
   protected host `.so` (functional identity) and, with the Android NDK, builds a
-  real **arm64 Android `.so`** through the same flow.
+  real **arm64 Android `.so`** through the same flow. `test/arm64-exec-gate.sh`
+  then **runs the protected arm64 binary under qemu-user** and asserts it executes
+  identically — the native counterpart of the golden/ART gate, ISA-level.
 
 ## [0.3.0] — 2026-07-03
 
@@ -123,6 +130,7 @@ straight-line integer code virtualization, RASP injection, policy-as-code, the
 CLI (`analyze`/`obfuscate`/`protect`/`policy`/`retrace`), and the golden/ART
 runtime-correctness gate.
 
+[0.4.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.1.0

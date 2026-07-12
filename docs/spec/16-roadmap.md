@@ -31,6 +31,14 @@ Além do MVP (v0.1.0: engine rename/strings/control-flow, gate de corretude gold
 
 > A inspeção binária dos três formatos (Dalvik/IR, Mach-O, ELF) é **stdlib-only**. Os transforms invasivos (LLVM, injeção nativa, re-assinatura) e seus gates de execução ficam adiados (dep. de toolchain/infra), decompostos como sub-issues.
 
+### v0.4.0 (entregue) — proteção de código nativo (LLVM) + análise de binários
+
+- **`native-svc`** (épico [#64](https://github.com/Martinez1991/shield-platform/issues/64), [ADR 0004](../adr/0004-llvm-native-svc.md)) — serviço LLVM **out-of-tree**, invocado como subprocess (nunca ligado ao build Go; engine segue stdlib-only/CGO-free). Quatro passes componíveis sobre bitcode: **flattening** de fluxo, **MBA**, **opaque predicates** e **cifra de strings** (#82, #83).
+- **Gates de execução nativos** — cada pass é provado funcionalmente idêntico (host via dlopen), a pipeline compile→transform→link produz um **`.so` arm64 Android** real, e o binário arm64 protegido **executa idêntico sob qemu-user** (contrapartida ISA do gate golden/ART).
+- **`shield analyze <ipa|apk|aab>`** ([#87](https://github.com/Martinez1991/shield-platform/issues/87)) — inspeção de binários Mach-O/ELF (arquitetura, seções, símbolos, densidade de segredos) no CLI, reaproveitando as fundações stdlib-only.
+
+> Uma terceira dependência foi introduzida de forma disciplinada (toolchain LLVM), **confinada a um executável separado** — nem `go.mod` nem o engine mudam.
+
 ## Marcos de qualidade
 - **M1 (fim MVP):** UX ≥ 7/10; corretude 100% golden apps; nota geral do committee ≥ 6.
 - **M2 (fim V1):** SLA 99.9% control plane; SCA/SAST sem high; SBOM por release.

@@ -1,9 +1,10 @@
 name: native
 
-# LLVM native-svc build + execution gate (issue #82, ADR 0004). Installs LLVM 18
-# and Clang, builds the out-of-tree native-svc, and runs the flattening execution
-# gate: a bitcode program is flattened and must stay functionally identical. Kept
-# separate from the fast Go checks since it provisions the LLVM toolchain.
+# LLVM native-svc build + execution gates (issue #82/#64, ADR 0004). Installs
+# LLVM 18, Clang and qemu-user, builds the out-of-tree native-svc, and runs the
+# gates: passes stay functionally identical (host), the end-to-end lib flow builds
+# an arm64 Android .so, and the protected arm64 binary executes identically under
+# qemu-user. Kept separate from the fast Go checks since it provisions toolchains.
 
 on:
   push:
@@ -27,11 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM 18 toolchain
+      - name: Install LLVM 18 toolchain + arm64 cross + qemu-user
         run: |
           sudo apt-get update
           sudo apt-get install -y llvm-18-dev clang-18 cmake ninja-build \
-            build-essential zlib1g-dev libzstd-dev libtinfo-dev libedit-dev
+            build-essential zlib1g-dev libzstd-dev libtinfo-dev libedit-dev \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-static
 
       - name: Configure
         run: cmake -S native-svc -B native-svc/build -G Ninja
@@ -46,3 +48,6 @@ jobs:
       - name: End-to-end native-lib gate (host run + arm64 Android build)
         # ANDROID_NDK_LATEST_HOME is preset on the runner; ndk-gate.sh reads it.
         run: bash native-svc/test/ndk-gate.sh
+
+      - name: arm64 execution gate (protected arm64 runs identically, under qemu)
+        run: bash native-svc/test/arm64-exec-gate.sh
