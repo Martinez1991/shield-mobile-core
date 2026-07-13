@@ -29,11 +29,13 @@ const (
 	PassOpaque  Pass = "opaque"  // opaque predicates
 	PassStrings Pass = "strings" // native string / const obfuscation
 	PassRasp    Pass = "rasp"    // runtime anti-debug injection
+	PassTamper  Pass = "tamper"  // self-checksum anti-tamper (needs post-link patch)
 )
 
 // validPasses is the set native-svc understands; ParsePasses rejects the rest.
 var validPasses = map[Pass]bool{
-	PassFlatten: true, PassMBA: true, PassOpaque: true, PassStrings: true, PassRasp: true,
+	PassFlatten: true, PassMBA: true, PassOpaque: true, PassStrings: true,
+	PassRasp: true, PassTamper: true,
 }
 
 // ErrUnavailable means native-svc (the LLVM toolchain) is not installed. It is

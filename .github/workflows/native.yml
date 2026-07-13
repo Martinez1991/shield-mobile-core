@@ -54,3 +54,6 @@ jobs:
 
       - name: RASP gate (anti-debug silent normally, fires under a tracer)
         run: bash native-svc/test/rasp-gate.sh
+
+      - name: "Anti-tamper gate (self-checksum: patch matches, tamper detected)"
+        run: bash native-svc/test/tamper-gate.sh

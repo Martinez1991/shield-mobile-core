@@ -18,9 +18,15 @@ bitcode on stdout. Deterministic given the same input, passes and seed.
 Passes (all implemented and composable): `flatten` (control-flow flattening),
 `mba` (mixed boolean-arithmetic substitution), `opaque` (always-true opaque
 predicates + bogus junk blocks), `strings` (XOR-encrypt local string literals
-with a load-time decryptor) and `rasp` (runtime anti-debug: a load-time check of
+with a load-time decryptor) `rasp` (runtime anti-debug: a load-time check of
 `/proc/self/status` TracerPid that exits the process if a debugger is attached,
-silent otherwise). An unknown pass errors (exit 3) — never a silent no-op.
+silent otherwise) and `tamper` (self-checksum: sums the `shieldtext` section at
+load and exits if it doesn't match a post-link-patched expected value). An
+unknown pass errors (exit 3) — never a silent no-op.
+
+The `tamper` pass needs a **post-link** step: after linking, run
+`tools/tamper-patch.py patch <binary>` to write the real section checksum into
+`__shield_tamper_expected`. Without it the binary self-detects as tampered.
 
 ## Build (Ubuntu 24.04 / WSL2)
 

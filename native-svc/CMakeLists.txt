@@ -42,6 +42,7 @@ add_executable(native-svc
   src/Opaque.cpp
   src/Rasp.cpp
   src/Strings.cpp
+  src/Tamper.cpp
 )
 
 llvm_map_components_to_libnames(llvm_libs

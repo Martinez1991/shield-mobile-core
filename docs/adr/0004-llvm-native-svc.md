@@ -88,14 +88,16 @@ runs the protected `.so` (functional identity), and — with the Android NDK —
 same flow builds a real **arm64 Android `.so`** (structural gate; running it needs
 an emulator). LLVM 18-written bitcode links cleanly with the NDK's clang.
 
-The four obfuscation passes (`flatten`, `mba`, `opaque`, `strings`) plus a runtime
-`rasp` anti-debug pass (#84) are implemented and composable, each covered by an
-execution gate — including `arm64-exec-gate.sh` (protected arm64 runs identically
-under qemu-user) and `rasp-gate.sh` (silent normally, exits under a ptrace tracer).
+The four obfuscation passes (`flatten`, `mba`, `opaque`, `strings`) plus RASP
+`rasp` (anti-debug) and `tamper` (self-checksum anti-tamper) passes (#84) are
+implemented and composable, each covered by an execution gate — including
+`arm64-exec-gate.sh` (protected arm64 runs identically under qemu-user),
+`rasp-gate.sh` (silent normally, exits under a ptrace tracer) and `tamper-gate.sh`
+(unpatched/tampered detected, patched identical). The `tamper` pass has a
+post-link step, `tools/tamper-patch.py`, that stamps the real section checksum.
 
-**Still deferred:** anti-tamper (section checksum needs a post-link patch step),
-and driving this from the Go worker on a real APK's recompilable native module
-(#64).
+**Still deferred:** driving this from the Go worker on a real APK's recompilable
+native module (#64).
 
 ## Consequences
 

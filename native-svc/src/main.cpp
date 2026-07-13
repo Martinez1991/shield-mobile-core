@@ -13,6 +13,7 @@
 #include "Opaque.h"
 #include "Rasp.h"
 #include "Strings.h"
+#include "Tamper.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
@@ -93,6 +94,8 @@ int main(int argc, char **argv) {
       stringsModule(*mod, seed); // module-level: encrypts globals + adds a ctor
     } else if (p == "rasp") {
       raspModule(*mod, seed); // module-level: injects an anti-debug ctor
+    } else if (p == "tamper") {
+      tamperModule(*mod, seed); // module-level: self-checksum (needs post-link patch)
     } else {
       errs() << "native-svc: pass '" << p << "' not implemented yet\n";
       return 3;

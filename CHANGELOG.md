@@ -11,8 +11,14 @@ versions are git tags with a matching GitHub release.
   functionally identical. Its globals are named `__shield_*` so the `strings` pass
   skips them. `native-svc/test/rasp-gate.sh` proves both properties with a
   self-contained `ptrace` tracer (no strace/gdb needed), including the full
-  `rasp+flatten+mba+opaque+strings` composition. Anti-tamper (section checksum)
-  needs a post-link patch step and stays deferred.
+  `rasp+flatten+mba+opaque+strings` composition.
+- **Native RASP — anti-tamper** (`native-svc` `tamper` pass, #84): moves functions
+  into a `shieldtext` section and injects a load-time self-checksum over it
+  (between the linker-defined `__start_/__stop_shieldtext`), compared to a
+  post-link-patched `__shield_tamper_expected`. `tools/tamper-patch.py` (pure
+  stdlib ELF) writes the real checksum after linking; if the code is patched
+  afterward, the runtime sum diverges and the process exits. `test/tamper-gate.sh`
+  proves unpatched→detected, patched→identical, tampered→detected — closing #84.
 
 ## [0.4.0] — 2026-07-05
 
