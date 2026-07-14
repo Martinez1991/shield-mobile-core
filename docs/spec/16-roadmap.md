@@ -39,6 +39,13 @@ Além do MVP (v0.1.0: engine rename/strings/control-flow, gate de corretude gold
 
 > Uma terceira dependência foi introduzida de forma disciplinada (toolchain LLVM), **confinada a um executável separado** — nem `go.mod` nem o engine mudam.
 
+### v0.5.0 (entregue) — RASP nativo + worker de APK (loop nativo fechado)
+
+- **RASP nativo** ([#84](https://github.com/Martinez1991/shield-platform/issues/84)) — `rasp` (anti-debug via `TracerPid`) e `tamper` (self-checksum de seção + patch pós-link `tamper-patch.py`), cada um com gate de execução (silencioso normal / dispara sob tracer / detecta adulteração).
+- **Worker Go de APK** ([#82](https://github.com/Martinez1991/shield-platform/issues/82)/[#64](https://github.com/Martinez1991/shield-platform/issues/64)) — `internal/nativesvc.ProtectArchive` + `cmd/shield-nativeapk`: módulos nativos recompiláveis (sidecar de bitcode) são transformados → linkados → tamper-patchados → reempacotados byte-a-byte; `apk-flow-gate.sh` prova o round-trip (roda idêntico + detecta tamper).
+
+> Loop nativo completo: análise → 6 passes (flatten/MBA/opaque/strings/rasp/tamper) → gates de execução (host + arm64 qemu) → round-trip de APK dirigido pelo worker. Falta só um gate on-device/emulador Android arm64 (infra).
+
 ## Marcos de qualidade
 - **M1 (fim MVP):** UX ≥ 7/10; corretude 100% golden apps; nota geral do committee ≥ 6.
 - **M2 (fim V1):** SLA 99.9% control plane; SCA/SAST sem high; SBOM por release.

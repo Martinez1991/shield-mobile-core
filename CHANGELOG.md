@@ -3,7 +3,12 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
-## [Unreleased]
+## [0.5.0] — 2026-07-14
+
+Native RASP (anti-debug + anti-tamper) and the Go worker that drives the whole
+APK/AAB native-protection round-trip — closing the native loop (epic #64): analyze
+→ passes → execution gates → worker-orchestrated repackage. The engine stays
+stdlib-only, CGO-free; the golden/ART gate stays green.
 
 - **Native RASP — anti-debug** (`native-svc` `rasp` pass, #84): injects a load-time
   check (reads `/proc/self/status` TracerPid via libc) that exits the process if a
@@ -155,6 +160,7 @@ straight-line integer code virtualization, RASP injection, policy-as-code, the
 CLI (`analyze`/`obfuscate`/`protect`/`policy`/`retrace`), and the golden/ART
 runtime-correctness gate.
 
+[0.5.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.2.0

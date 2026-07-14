@@ -1,4 +1,4 @@
-# SHIELD — Engine de Ofuscação + Plataforma (v0.4.0)
+# SHIELD — Engine de Ofuscação + Plataforma (v0.5.0)
 
 Ferramenta de ofuscação de código Android que implementa o **Engine de Ofuscação**
 (Seção 3 de [`shield-platform.md`](shield-platform.md)) como uma CLI real. O **engine
@@ -76,13 +76,13 @@ Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` 
 | P2 | **Determinismo** | ✅ | Mesmo input + policy + seed ⇒ output idêntico (testado). |
 | P4 | **Policy-as-Code** | ✅ | Policy JSON versionável + presets + validação. |
 
-### Plataforma (v0.3.0 → v0.4.0)
+### Plataforma (v0.4.0 → v0.5.0)
 
 | Capacidade | Status | Notas |
 |-----------|--------|-------|
 | **IR tipada** (`internal/ir`) | ✅ | Parser estruturado + inferência de tipos + liveness ([ADR 0001](docs/adr/0001-typed-ir.md)); base do flattening e do invoke da VM. |
 | **Proteção risk-driven** (`internal/risk`) | ✅ | Score de risco por método (features estáticas + heurística explicável, sem ML); `risk.enabled`+`threshold` concentra VM/flattening nos hot spots; `Result.RiskMap` auditável. |
-| **Proteção de código nativo** (`native-svc`) | ✅ | Serviço LLVM **out-of-tree** ([ADR 0004](docs/adr/0004-llvm-native-svc.md)) via subprocess; 4 passes sobre bitcode (**flatten/MBA/opaque/strings**), cada um com **gate de execução** (host + arm64 sob qemu). `internal/nativesvc` é o seam Go. |
+| **Proteção de código nativo** (`native-svc`) | ✅ | Serviço LLVM **out-of-tree** ([ADR 0004](docs/adr/0004-llvm-native-svc.md)) via subprocess; 6 passes sobre bitcode (**flatten/MBA/opaque/strings** + **RASP anti-debug/anti-tamper**), cada um com **gate de execução** (host + arm64 sob qemu). O worker Go (`ProtectArchive`/`cmd/shield-nativeapk`) dirige o round-trip de APK end-to-end. |
 | **Análise de binários** (`internal/inspect`) | ✅ | `shield analyze <ipa\|apk\|aab>` reporta Mach-O/ELF (arquitetura, seções, símbolos, densidade de segredos). |
 | **Fundação iOS** (`internal/ios`) | ✅ análise | Round-trip de IPA + inspeção Mach-O via `debug/macho` (segments/sections/symbols/segredos). Transforms/re-assinatura → roadmap. |
 | **Fundação nativa** (`internal/native`) | ✅ análise | Inspeção de `.so` ELF via `debug/elf` (secções/símbolos/`.rodata`). |
