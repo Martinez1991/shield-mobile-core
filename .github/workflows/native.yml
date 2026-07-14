@@ -28,6 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
       - name: Install LLVM 18 toolchain + arm64 cross + qemu-user
         run: |
           sudo apt-get update
@@ -57,3 +61,6 @@ jobs:
 
       - name: "Anti-tamper gate (self-checksum: patch matches, tamper detected)"
         run: bash native-svc/test/tamper-gate.sh
+
+      - name: "End-to-end APK flow gate (Go worker: transform -> link -> patch -> repackage)"
+        run: bash native-svc/test/apk-flow-gate.sh

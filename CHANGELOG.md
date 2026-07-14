@@ -19,6 +19,14 @@ versions are git tags with a matching GitHub release.
   stdlib ELF) writes the real checksum after linking; if the code is patched
   afterward, the runtime sum diverges and the process exits. `test/tamper-gate.sh`
   proves unpatched→detected, patched→identical, tampered→detected — closing #84.
+- **End-to-end APK native protection** (`cmd/shield-nativeapk`,
+  `internal/nativesvc.ProtectArchive`, #82/#64): the Go worker protects an
+  APK/AAB's recompilable native modules — bitcode sidecars `lib/<abi>/<name>.so.bc`
+  — by transforming each with `native-svc`, linking it back to a `.so`,
+  tamper-patching (when `tamper` is used), and repackaging byte-for-byte; plain
+  `.so` without a sidecar are left untouched. Link/patch are injected
+  (`Linker`/`Patcher`) so the orchestration is offline-tested; `apk-flow-gate.sh`
+  proves the full round-trip runs identically and still detects tampering.
 
 ## [0.4.0] — 2026-07-05
 

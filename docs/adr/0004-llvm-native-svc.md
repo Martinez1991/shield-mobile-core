@@ -96,8 +96,15 @@ implemented and composable, each covered by an execution gate — including
 (unpatched/tampered detected, patched identical). The `tamper` pass has a
 post-link step, `tools/tamper-patch.py`, that stamps the real section checksum.
 
-**Still deferred:** driving this from the Go worker on a real APK's recompilable
-native module (#64).
+The Go worker drives the whole APK/AAB flow in `internal/nativesvc.ProtectArchive`
+(`cmd/shield-nativeapk`): recompilable native modules ship as bitcode sidecars
+`lib/<abi>/<name>.so.bc`, each transformed → linked → tamper-patched → repackaged
+byte-for-byte, plain `.so` left untouched. The link/patch steps are injected, so
+the orchestration is offline-tested; `apk-flow-gate.sh` proves the round-trip end
+to end (runs identically, detects tampering).
+
+**Still deferred:** an on-device/emulator execution gate for the Android arm64
+artifact (the current gates run under qemu-user / on the host).
 
 ## Consequences
 

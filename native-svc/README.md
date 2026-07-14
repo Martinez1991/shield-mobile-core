@@ -52,6 +52,16 @@ Compiles `test/sample.c` to bitcode, flattens it, asserts the dispatcher was
 introduced (more basic blocks + a `switchVar`), then compiles and runs both and
 diffs the output — proving the transform is functionally identical.
 
+## End-to-end APK flow (the Go worker)
+
+`shield-nativeapk` (Go, `cmd/shield-nativeapk`) drives this over an APK/AAB whose
+recompilable native modules ship as bitcode sidecars `lib/<abi>/<name>.so.bc`:
+each is transformed by `native-svc`, linked back to a `.so`, tamper-patched (when
+the `tamper` pass is used), and repackaged byte-for-byte; plain `.so` without a
+sidecar are left untouched. The orchestration is `internal/nativesvc.ProtectArchive`
+(offline-tested with injected linker/patcher); `native-svc/test/apk-flow-gate.sh`
+proves the whole round-trip runs identically and still detects tampering.
+
 ## How it plugs into the pipeline
 
 The worker compiles a recompilable native source/bitcode → `.bc`, pipes it
