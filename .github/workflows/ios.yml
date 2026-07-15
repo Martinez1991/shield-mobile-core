@@ -13,12 +13,14 @@ on:
       - 'internal/ios/**'
       - 'cmd/shield-iosstrip/**'
       - 'scripts/ios-strip-gate.sh'
+      - 'scripts/ios-simulator-gate.sh'
       - '.github/workflows/ios.yml'
   pull_request:
     paths:
       - 'internal/ios/**'
       - 'cmd/shield-iosstrip/**'
       - 'scripts/ios-strip-gate.sh'
+      - 'scripts/ios-simulator-gate.sh'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
@@ -38,3 +40,16 @@ jobs:
 
       - name: Mach-O strip execution gate
         run: bash scripts/ios-strip-gate.sh
+
+  simulator-gate:
+    name: iOS Simulator differential gate (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: iOS Simulator differential gate
+        run: bash scripts/ios-simulator-gate.sh

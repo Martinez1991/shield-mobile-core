@@ -12,8 +12,12 @@ versions are git tags with a matching GitHub release.
   tests — so the IPA round-trip is offline-tested. A macOS CI workflow (`ios.yml`,
   `scripts/ios-strip-gate.sh`) proves it end to end: the stripped, ad-hoc-signed
   binary still runs identically and the local symbol is gone. No Apple certificate
-  needed (ad-hoc); full distribution re-signing (#77) and the Simulator
-  differential (#78) remain.
+  needed (ad-hoc); full distribution re-signing (#77) remains.
+- **iOS Simulator differential gate** (#78): `scripts/ios-simulator-gate.sh` (macOS
+  CI) builds a Mach-O for the iOS Simulator, runs it in a booted simulator via
+  `simctl spawn` (real iOS dyld/libSystem), protects it through the Go worker
+  (strip + ad-hoc sign), and requires the protected binary to run identically —
+  lifting iOS verification from the macOS host to the iOS runtime.
 - **On-device arm64 execution gate** (#64): `native-svc/test/ondevice-gate.sh`
   runs the protected arm64 binary on a real Android device over adb and requires
   identical output, plus anti-tamper (patched → identical, a flipped code byte →
