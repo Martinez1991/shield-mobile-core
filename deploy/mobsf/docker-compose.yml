@@ -1,0 +1,23 @@
+# MobSF (Mobile Security Framework) as an external MAST service for SHIELD.
+#
+# MobSF is GPL-3.0. SHIELD orchestrates it over HTTP (internal/mast) and never
+# links its code, so the SHIELD engine stays Apache-2.0 and dependency-free.
+#
+#   docker compose -f deploy/mobsf/docker-compose.yml up -d
+#   # the REST API key is printed in the logs on first start (or set MOBSF_API_KEY):
+#   docker compose -f deploy/mobsf/docker-compose.yml logs mobsf | grep -i "api key"
+services:
+  mobsf:
+    image: opensecurity/mobile-security-framework-mobsf:latest
+    container_name: shield-mobsf
+    ports:
+      - "8000:8000"
+    environment:
+      # Optional: pin the REST API key. If unset, MobSF generates one (see logs).
+      - MOBSF_API_KEY=${MOBSF_API_KEY:-}
+    volumes:
+      - mobsf-data:/home/mobsf/.MobSF
+    restart: unless-stopped
+
+volumes:
+  mobsf-data:
