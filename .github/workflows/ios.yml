@@ -1,0 +1,40 @@
+name: ios
+
+# iOS Mach-O strip gate (issue #76), on a macOS runner (the strip/codesign tools
+# only exist on macOS). Builds a Mach-O, strips it through the Go worker
+# (cmd/shield-iosstrip) with an ad-hoc re-sign, and proves the round-trip: the
+# stripped binary still runs identically and a local symbol is gone. No Apple
+# certificate is needed (ad-hoc). Kept separate from the fast Go checks.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/ios/**'
+      - 'cmd/shield-iosstrip/**'
+      - 'scripts/ios-strip-gate.sh'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'internal/ios/**'
+      - 'cmd/shield-iosstrip/**'
+      - 'scripts/ios-strip-gate.sh'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strip-gate:
+    name: Mach-O strip gate (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Mach-O strip execution gate
+        run: bash scripts/ios-strip-gate.sh

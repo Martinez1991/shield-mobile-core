@@ -5,6 +5,15 @@ versions are git tags with a matching GitHub release.
 
 ## [Unreleased]
 
+- **iOS Mach-O metadata strip** (`internal/ios.StripIPA`, `cmd/shield-iosstrip`,
+  #76): strips the app + framework Mach-O binaries of an IPA (symbols / superfluous
+  `__LINKEDIT`) and repackages byte-for-byte. Strip/sign are injected
+  (`Stripper`/`Signer`) — real `xcrun strip` / ad-hoc `codesign` on macOS, fakes in
+  tests — so the IPA round-trip is offline-tested. A macOS CI workflow (`ios.yml`,
+  `scripts/ios-strip-gate.sh`) proves it end to end: the stripped, ad-hoc-signed
+  binary still runs identically and the local symbol is gone. No Apple certificate
+  needed (ad-hoc); full distribution re-signing (#77) and the Simulator
+  differential (#78) remain.
 - **On-device arm64 execution gate** (#64): `native-svc/test/ondevice-gate.sh`
   runs the protected arm64 binary on a real Android device over adb and requires
   identical output, plus anti-tamper (patched → identical, a flipped code byte →
