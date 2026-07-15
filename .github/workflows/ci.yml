@@ -49,7 +49,7 @@ jobs:
         run: |
           for t in FuzzUnescapeSmali FuzzCompileMethod FuzzReorderMethod FuzzSplitBlocks FuzzEstimateMethodRefs FuzzPassesOnClass; do
             echo "== $t =="
-            go test ./internal/engine -run '^$' -fuzz "^${t}$" -fuzztime=20s
+            go test ./engine -run '^$' -fuzz "^${t}$" -fuzztime=20s
           done
           go test ./internal/manifest -run '^$' -fuzz '^FuzzKeepClasses$' -fuzztime=20s
 
