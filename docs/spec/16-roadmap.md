@@ -46,6 +46,14 @@ Além do MVP (v0.1.0: engine rename/strings/control-flow, gate de corretude gold
 
 > Loop nativo completo: análise → 6 passes (flatten/MBA/opaque/strings/rasp/tamper) → gates de execução (host + arm64 qemu) → round-trip de APK dirigido pelo worker. Falta só um gate on-device/emulador Android arm64 (infra).
 
+### v0.6.0 (entregue) — fundação iOS (strip + Simulador) + gate on-device Android
+
+- **iOS Mach-O strip** ([#76](https://github.com/Martinez1991/shield-platform/issues/76)) — `internal/ios.StripIPA` + `cmd/shield-iosstrip`: strip de símbolos/`__LINKEDIT` do app + frameworks com re-assinatura ad-hoc, round-trip de IPA; gate no runner **macos-14** grátis.
+- **Differential no Simulador iOS** ([#78](https://github.com/Martinez1991/shield-platform/issues/78)) — `scripts/ios-simulator-gate.sh`: roda o binário protegido no runtime iOS real via `simctl spawn` e exige saída idêntica.
+- **Gate on-device Android** ([#64](https://github.com/Martinez1991/shield-platform/issues/64)) — `ondevice-gate.sh`: binário arm64 protegido roda idêntico + anti-tamper detectado num **Galaxy S24 real**.
+
+> iOS gratuito esgotado sem infra paga: falta só a **re-assinatura de distribuição** ([#77](https://github.com/Martinez1991/shield-platform/issues/77), certificado Apple pago).
+
 ## Marcos de qualidade
 - **M1 (fim MVP):** UX ≥ 7/10; corretude 100% golden apps; nota geral do committee ≥ 6.
 - **M2 (fim V1):** SLA 99.9% control plane; SCA/SAST sem high; SBOM por release.

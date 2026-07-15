@@ -3,7 +3,11 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
-## [Unreleased]
+## [0.6.0] — 2026-07-15
+
+Opens the iOS front on the free macos-14 runners (Mach-O strip + Simulator
+differential) and adds an on-device Android arm64 execution gate on real
+hardware. The Go engine is unchanged — stdlib-only, CGO-free, golden/ART green.
 
 - **iOS Mach-O metadata strip** (`internal/ios.StripIPA`, `cmd/shield-iosstrip`,
   #76): strips the app + framework Mach-O binaries of an IPA (symbols / superfluous
@@ -182,6 +186,7 @@ straight-line integer code virtualization, RASP injection, policy-as-code, the
 CLI (`analyze`/`obfuscate`/`protect`/`policy`/`retrace`), and the golden/ART
 runtime-correctness gate.
 
+[0.6.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Martinez1991/shield-platform/releases/tag/v0.3.0

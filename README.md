@@ -1,4 +1,4 @@
-# SHIELD — Engine de Ofuscação + Plataforma (v0.5.0)
+# SHIELD — Engine de Ofuscação + Plataforma (v0.6.0)
 
 Ferramenta de ofuscação de código Android que implementa o **Engine de Ofuscação**
 (Seção 3 de [`shield-platform.md`](shield-platform.md)) como uma CLI real. O **engine
@@ -76,7 +76,7 @@ Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` 
 | P2 | **Determinismo** | ✅ | Mesmo input + policy + seed ⇒ output idêntico (testado). |
 | P4 | **Policy-as-Code** | ✅ | Policy JSON versionável + presets + validação. |
 
-### Plataforma (v0.4.0 → v0.5.0)
+### Plataforma (v0.5.0 → v0.6.0)
 
 | Capacidade | Status | Notas |
 |-----------|--------|-------|
@@ -84,7 +84,7 @@ Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` 
 | **Proteção risk-driven** (`internal/risk`) | ✅ | Score de risco por método (features estáticas + heurística explicável, sem ML); `risk.enabled`+`threshold` concentra VM/flattening nos hot spots; `Result.RiskMap` auditável. |
 | **Proteção de código nativo** (`native-svc`) | ✅ | Serviço LLVM **out-of-tree** ([ADR 0004](docs/adr/0004-llvm-native-svc.md)) via subprocess; 6 passes sobre bitcode (**flatten/MBA/opaque/strings** + **RASP anti-debug/anti-tamper**), cada um com **gate de execução** (host + arm64 sob qemu). O worker Go (`ProtectArchive`/`cmd/shield-nativeapk`) dirige o round-trip de APK end-to-end. |
 | **Análise de binários** (`internal/inspect`) | ✅ | `shield analyze <ipa\|apk\|aab>` reporta Mach-O/ELF (arquitetura, seções, símbolos, densidade de segredos). |
-| **Fundação iOS** (`internal/ios`) | ✅ análise | Round-trip de IPA + inspeção Mach-O via `debug/macho` (segments/sections/symbols/segredos). Transforms/re-assinatura → roadmap. |
+| **iOS** (`internal/ios`, `cmd/shield-iosstrip`) | ✅ strip | Inspeção Mach-O + **metadata strip** (símbolos/`__LINKEDIT`) com re-assinatura ad-hoc, round-trip de IPA; gates no runner **macOS** (`xcrun strip`/`codesign`) e **differential no Simulador iOS** (`simctl spawn`). Re-assinatura de distribuição (cert pago) → roadmap. |
 | **Fundação nativa** (`internal/native`) | ✅ análise | Inspeção de `.so` ELF via `debug/elf` (secções/símbolos/`.rodata`). |
 | **AAB / App Bundle** | ✅ | Round-trip de bundle (`shield protect app.aab`) preservando entries byte-a-byte; **keep-rules do manifesto protobuf** (parser aapt2 hand-rolled). |
 | **Worker sandboxed + fila** | ✅ | `cmd/shield-worker` consome `queue.Queue` (Mem/Dir/**NATS JetStream**); deploy gVisor + no-egress + **KEDA** por profundidade de fila ([`deploy/`](deploy/)). |
