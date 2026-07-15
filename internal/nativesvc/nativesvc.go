@@ -17,7 +17,7 @@ import (
 	"os"
 	"os/exec"
 
-	"shield/internal/native"
+	"github.com/Martinez1991/shield-mobile-core/internal/native"
 )
 
 // Pass is one LLVM obfuscation pass native-svc can apply.

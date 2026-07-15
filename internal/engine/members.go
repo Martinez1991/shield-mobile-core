@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // Member (method/field) renaming (shield-platform.md section 3.1). Scope is

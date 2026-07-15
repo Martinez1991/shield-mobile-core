@@ -9,7 +9,7 @@ import (
 	"math"
 	"regexp"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // Finding is one piece of sensitive data located in the binary.

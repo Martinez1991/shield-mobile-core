@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"shield/internal/analyze"
+	"github.com/Martinez1991/shield-mobile-core/internal/analyze"
 )
 
 // Mach-O inspection (issue #75). Read-only analysis over the standard library's

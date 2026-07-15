@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"shield/internal/risk"
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/risk"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // riskKey is a stable identity for a method — its owner descriptor plus

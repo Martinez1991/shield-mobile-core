@@ -18,7 +18,7 @@ import (
 	"os"
 	"strings"
 
-	"shield/internal/nativesvc"
+	"github.com/Martinez1991/shield-mobile-core/internal/nativesvc"
 )
 
 func main() {

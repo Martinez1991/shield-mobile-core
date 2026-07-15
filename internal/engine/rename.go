@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // Type descriptors are the only tokens we rewrite for renaming: every class,

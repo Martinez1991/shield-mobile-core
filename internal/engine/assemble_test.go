@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"shield/internal/policy"
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // TestAssembleRoundTrip proves the obfuscated smali assembles into a valid DEX
@@ -73,7 +73,7 @@ func TestVMAssembles(t *testing.T) {
 	}
 	writeClass(t, dir, "com/x/Y.smali", host.Lines)
 	vm := VMClass(dir, wire)
-	writeClass(t, dir, "shield/rt/VM.smali", vm.Lines)
+	writeClass(t, dir, "github.com/Martinez1991/shield-mobile-core/rt/VM.smali", vm.Lines)
 
 	dex := filepath.Join(t.TempDir(), "vm.dex")
 	cmd := exec.Command("java", "-jar", jar, "a", dir, "-o", dex)

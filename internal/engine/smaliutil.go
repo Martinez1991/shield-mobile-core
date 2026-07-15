@@ -3,7 +3,7 @@ package engine
 import (
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // forEachMethod rewrites each method body (`.method` .. `.end method`, inclusive)

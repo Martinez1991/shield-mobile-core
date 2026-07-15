@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // decryptorDescriptor is the injected runtime helper (kept out of renaming).

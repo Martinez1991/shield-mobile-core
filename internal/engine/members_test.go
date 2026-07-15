@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 const svcSmali = `.class public Lcom/bank/Svc;

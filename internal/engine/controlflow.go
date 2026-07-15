@@ -3,7 +3,7 @@ package engine
 import (
 	"fmt"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // passControlFlow inserts an always-true opaque predicate guarding a dead junk

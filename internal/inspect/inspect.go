@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	"shield/internal/apk"
-	"shield/internal/ios"
-	"shield/internal/native"
+	"github.com/Martinez1991/shield-mobile-core/internal/apk"
+	"github.com/Martinez1991/shield-mobile-core/internal/ios"
+	"github.com/Martinez1991/shield-mobile-core/internal/native"
 )
 
 // Binary is one inspected binary (a Mach-O arch slice or an ELF .so), flattened

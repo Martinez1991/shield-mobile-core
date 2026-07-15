@@ -1,0 +1,11 @@
+SHIELD Mobile Core
+Copyright 2026 SHIELD Mobile Core contributors
+
+This product includes software developed as the open-source core of the SHIELD
+mobile application-shielding platform.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The engine is pure Go and depends only on the Go standard library. The out-of-tree
+LLVM component under native-svc/ is built separately and invoked as a subprocess;
+it is never linked into the Go build.

@@ -9,10 +9,10 @@ import (
 	"regexp"
 	"time"
 
-	"shield/internal/manifest"
-	"shield/internal/policy"
-	"shield/internal/risk"
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/manifest"
+	"github.com/Martinez1991/shield-mobile-core/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/internal/risk"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // Stage records how long one protection pass took (observability, issue #21).

@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"shield/internal/engine"
-	"shield/internal/manifest"
-	"shield/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/internal/engine"
+	"github.com/Martinez1991/shield-mobile-core/internal/manifest"
+	"github.com/Martinez1991/shield-mobile-core/internal/policy"
 )
 
 // AAB (Android App Bundle) support (shield-platform.md section 4, issue #16). An

@@ -1,6 +1,6 @@
 package engine
 
-import "shield/internal/smali"
+import "github.com/Martinez1991/shield-mobile-core/internal/smali"
 
 // passJunk inserts N verifier-safe `nop` instructions at the head of every
 // method body (a conservative slice of section 3.2). It never changes registers

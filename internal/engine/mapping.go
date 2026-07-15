@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // MapEntry records one original->obfuscated rename (dotted form), used to

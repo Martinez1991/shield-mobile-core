@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // The parsers/passes operate on attacker-influenced smali (issue #10, risk RM2).

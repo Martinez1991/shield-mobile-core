@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"shield/internal/analyze"
+	"github.com/Martinez1991/shield-mobile-core/internal/analyze"
 )
 
 // ELFInfo is the inspection result for one ELF shared object.

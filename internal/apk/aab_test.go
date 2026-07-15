@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"shield/internal/manifest"
+	"github.com/Martinez1991/shield-mobile-core/internal/manifest"
 )
 
 // --- minimal protobuf encoders for a synthetic aapt XmlNode manifest ---

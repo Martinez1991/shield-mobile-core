@@ -1,11 +1,17 @@
-# SHIELD — Engine de Ofuscação + Plataforma (v0.6.0)
+# SHIELD Mobile Core — Engine de Ofuscação (Community Edition)
+
+> **Núcleo open-source** da plataforma SHIELD, licenciado **Apache-2.0** (ver
+> [`LICENSE`](LICENSE)). Contém o engine de proteção e todas as transformações,
+> os gates de execução (golden/ART, host, arm64/qemu, on-device, iOS Simulator),
+> a CLI, o `native-svc` (LLVM) e o SDK. É **Go puro, stdlib-only, zero dependências
+> externas e determinístico**. As camadas de plataforma/Enterprise (worker + fila,
+> observabilidade OTel, ingest de RASP, RBAC/SSO, compliance, antifraude, cloud)
+> vivem em um repositório separado e consomem este core como um módulo Go.
 
 Ferramenta de ofuscação de código Android que implementa o **Engine de Ofuscação**
 (Seção 3 de [`shield-platform.md`](shield-platform.md)) como uma CLI real. O **engine
-é Go puro (stdlib, zero dependências) e determinístico**; as duas dependências externas
-introduzidas (NATS para fila, OpenTelemetry para tracing) ficam **confinadas aos pacotes
-de plataforma** (`internal/queue`, `internal/obs`) e nunca são alcançadas pelo engine —
-ver [ADR 0002](docs/adr/0002-nats-queue.md)/[0003](docs/adr/0003-otlp-tracing.md).
+é Go puro (stdlib, zero dependências) e determinístico** — este repositório não puxa
+nenhuma dependência externa (`go.mod` sem `require`).
 
 A engine opera sobre **Smali** — a representação editável de bytecode Dalvik produzida
 por `baksmali`/`apktool` — usada como uma **SHIELD-IR simplificada** (doc §2.2 estágios

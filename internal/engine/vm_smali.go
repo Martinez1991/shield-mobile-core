@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // virtualizedBody replaces a compiled method's body with a call to the VM. It

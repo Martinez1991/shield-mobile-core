@@ -21,14 +21,14 @@ import (
 	"strconv"
 	"strings"
 
-	"shield/internal/analyze"
-	"shield/internal/apk"
-	"shield/internal/cache"
-	"shield/internal/engine"
-	"shield/internal/inspect"
-	"shield/internal/obs"
-	"shield/internal/policy"
-	"shield/internal/retrace"
+	"github.com/Martinez1991/shield-mobile-core/internal/analyze"
+	"github.com/Martinez1991/shield-mobile-core/internal/apk"
+	"github.com/Martinez1991/shield-mobile-core/internal/cache"
+	"github.com/Martinez1991/shield-mobile-core/internal/engine"
+	"github.com/Martinez1991/shield-mobile-core/internal/inspect"
+	"github.com/Martinez1991/shield-mobile-core/internal/obs"
+	"github.com/Martinez1991/shield-mobile-core/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/internal/retrace"
 )
 
 const version = "0.1.0"

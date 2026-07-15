@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"shield/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/internal/policy"
 )
 
 const cardValidatorSmali = `.class public Lcom/bank/pay/CardValidator;

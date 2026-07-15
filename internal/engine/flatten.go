@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"shield/internal/ir"
-	"shield/internal/risk"
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/ir"
+	"github.com/Martinez1991/shield-mobile-core/internal/risk"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // passFlatten rewrites eligible methods into a central-dispatcher ("flattened")

@@ -3,7 +3,7 @@ package engine
 import (
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // raspDescriptor is the injected RASP runtime (kept out of renaming).

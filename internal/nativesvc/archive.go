@@ -12,7 +12,7 @@ import (
 
 	"archive/zip"
 
-	"shield/internal/native"
+	"github.com/Martinez1991/shield-mobile-core/internal/native"
 )
 
 // Archive orchestration (issue #82/#64): the Go worker connects native-svc to the

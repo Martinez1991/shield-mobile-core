@@ -3,7 +3,7 @@ package engine
 import (
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // stripDirectives are debug-only smali directives that carry no runtime

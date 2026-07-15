@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"shield/internal/policy"
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // genClasses builds n synthetic app-owned classes with a realistic mix of

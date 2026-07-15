@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"os"
 
-	"shield/internal/ios"
+	"github.com/Martinez1991/shield-mobile-core/internal/ios"
 )
 
 func main() {

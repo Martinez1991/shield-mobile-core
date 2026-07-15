@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"shield/internal/risk"
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/risk"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // Code virtualization — the proprietary VM (shield-platform.md section 8).

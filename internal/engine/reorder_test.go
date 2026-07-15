@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 const branchy = `.class public Lcom/x/Y;

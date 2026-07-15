@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"shield/internal/analyze"
-	"shield/internal/ir"
+	"github.com/Martinez1991/shield-mobile-core/internal/analyze"
+	"github.com/Martinez1991/shield-mobile-core/internal/ir"
 )
 
 // MethodFeatures are deterministic static signals extracted from one method.

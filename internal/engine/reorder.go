@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"shield/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/internal/smali"
 )
 
 // passReorder physically shuffles the basic blocks of each method and reconnects
