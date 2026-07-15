@@ -3,6 +3,15 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
+## [Unreleased]
+
+- **On-device arm64 execution gate** (#64): `native-svc/test/ondevice-gate.sh`
+  runs the protected arm64 binary on a real Android device over adb and requires
+  identical output, plus anti-tamper (patched → identical, a flipped code byte →
+  exit 67). Verified on a Galaxy S24 (Bionic + ART). Manual/local (no device in
+  CI), so not wired into a workflow — the qemu-user gate is the CI counterpart.
+  Completes the native execution-gate coverage for epic #64.
+
 ## [0.5.0] — 2026-07-14
 
 Native RASP (anti-debug + anti-tamper) and the Go worker that drives the whole

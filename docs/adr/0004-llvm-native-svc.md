@@ -103,8 +103,14 @@ byte-for-byte, plain `.so` left untouched. The link/patch steps are injected, so
 the orchestration is offline-tested; `apk-flow-gate.sh` proves the round-trip end
 to end (runs identically, detects tampering).
 
-**Still deferred:** an on-device/emulator execution gate for the Android arm64
-artifact (the current gates run under qemu-user / on the host).
+An **on-device execution gate** (`native-svc/test/ondevice-gate.sh`) runs the
+protected arm64 binary on a real Android device over adb and requires identical
+output, plus anti-tamper (patched → identical, a flipped code byte → exit 67) —
+verified on a Galaxy S24 (Bionic + ART). It is manual/local (no device in CI), so
+it is not wired into a workflow; the qemu-user gate is the CI counterpart.
+
+The native protection loop is complete: analyze → six passes → execution gates
+(host, arm64 qemu-user, and on-device) → worker-driven APK round-trip.
 
 ## Consequences
 
