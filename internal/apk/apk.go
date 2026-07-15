@@ -11,9 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/Martinez1991/shield-mobile-core/internal/engine"
+	"github.com/Martinez1991/shield-mobile-core/engine"
 	"github.com/Martinez1991/shield-mobile-core/internal/ios"
-	"github.com/Martinez1991/shield-mobile-core/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/policy"
 )
 
 // Options configures a protect run.

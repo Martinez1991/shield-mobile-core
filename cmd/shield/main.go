@@ -24,10 +24,10 @@ import (
 	"github.com/Martinez1991/shield-mobile-core/internal/analyze"
 	"github.com/Martinez1991/shield-mobile-core/internal/apk"
 	"github.com/Martinez1991/shield-mobile-core/internal/cache"
-	"github.com/Martinez1991/shield-mobile-core/internal/engine"
+	"github.com/Martinez1991/shield-mobile-core/engine"
 	"github.com/Martinez1991/shield-mobile-core/internal/inspect"
-	"github.com/Martinez1991/shield-mobile-core/internal/obs"
-	"github.com/Martinez1991/shield-mobile-core/internal/policy"
+	"github.com/Martinez1991/shield-mobile-core/obs"
+	"github.com/Martinez1991/shield-mobile-core/policy"
 	"github.com/Martinez1991/shield-mobile-core/internal/retrace"
 )
 
