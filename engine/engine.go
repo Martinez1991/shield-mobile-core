@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/Martinez1991/shield-mobile-core/internal/manifest"
-	"github.com/Martinez1991/shield-mobile-core/policy"
 	"github.com/Martinez1991/shield-mobile-core/internal/risk"
 	"github.com/Martinez1991/shield-mobile-core/internal/smali"
+	"github.com/Martinez1991/shield-mobile-core/policy"
 )
 
 // Stage records how long one protection pass took (observability, issue #21).
