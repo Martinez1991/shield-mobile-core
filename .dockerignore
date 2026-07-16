@@ -1,0 +1,8 @@
+.git
+.github
+native-svc/build
+**/*_test.go
+testdata
+docs
+examples
+*.md

@@ -1,0 +1,22 @@
+name: 'SHIELD Mobile Protection'
+description: 'Obfuscate & harden an Android/iOS build with SHIELD, driven by shield.yml.'
+author: 'SHIELD Mobile Core'
+branding:
+  icon: shield
+  color: red
+inputs:
+  command:
+    description: 'shield subcommand to run (obfuscate | analyze | policy)'
+    required: false
+    default: 'obfuscate'
+  config:
+    description: 'Path to the shield.yml / shield.json config file'
+    required: false
+    default: 'shield.yml'
+runs:
+  using: docker
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.command }}
+    - --config
+    - ${{ inputs.config }}
