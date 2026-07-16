@@ -1,0 +1,32 @@
+name: fuzz-nightly
+
+# Continuous fuzzing (finding NEW inputs), off the PR critical path. The per-PR
+# CI runs the seed corpora deterministically (ci.yml fuzz-corpus); this job does
+# the time-boxed `-fuzz` run nightly so a slow-runner "context deadline exceeded"
+# never blocks a merge, while real fuzzing coverage keeps growing.
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # daily 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: continuous fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+      - name: fuzz smali parsers/passes
+        run: |
+          for t in FuzzUnescapeSmali FuzzCompileMethod FuzzReorderMethod FuzzSplitBlocks FuzzEstimateMethodRefs FuzzPassesOnClass; do
+            echo "== $t =="
+            go test ./engine -run '^$' -fuzz "^${t}$" -fuzztime=90s
+          done
+          go test ./internal/manifest -run '^$' -fuzz '^FuzzKeepClasses$' -fuzztime=90s

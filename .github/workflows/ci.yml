@@ -36,8 +36,8 @@ jobs:
       - name: go test
         run: go test -race -count=1 ./...
 
-  fuzz:
-    name: fuzz (parsers)
+  fuzz-corpus:
+    name: fuzz corpus (deterministic)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,13 +45,14 @@ jobs:
         with:
           go-version: 'stable'
           cache: true
-      - name: fuzz smali parsers/passes
+      # Run the fuzz seed corpora as regular tests: deterministic and fast (~2s),
+      # catching crashes/regressions on known inputs without the wall-clock
+      # "-fuzz" run that flaked with "context deadline exceeded" on slow runners.
+      # Continuous fuzzing (finding new inputs) runs nightly in fuzz-nightly.yml.
+      - name: fuzz seed corpora (regression run)
         run: |
-          for t in FuzzUnescapeSmali FuzzCompileMethod FuzzReorderMethod FuzzSplitBlocks FuzzEstimateMethodRefs FuzzPassesOnClass; do
-            echo "== $t =="
-            go test ./engine -run '^$' -fuzz "^${t}$" -fuzztime=20s
-          done
-          go test ./internal/manifest -run '^$' -fuzz '^FuzzKeepClasses$' -fuzztime=20s
+          go test ./engine -run '^Fuzz' -count=1
+          go test ./internal/manifest -run '^FuzzKeepClasses$' -count=1
 
   vuln:
     name: govulncheck (SCA)
