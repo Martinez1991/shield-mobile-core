@@ -66,11 +66,15 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
-// ToPolicy applies the protection toggles onto a base policy (e.g. a preset),
-// enabling the concrete passes each toggle stands for.
+// ToPolicy applies the config's protection toggles onto a base policy (e.g. a
+// preset), enabling the concrete passes each toggle stands for.
 func (c *Config) ToPolicy(base policy.Policy) policy.Policy {
-	p := base
-	pr := c.Protection
+	return c.Protection.Apply(base)
+}
+
+// Apply enables the passes each toggle stands for on top of a base policy. Only
+// enables (never disables), so it composes with a preset and with CLI flags.
+func (pr Protection) Apply(p policy.Policy) policy.Policy {
 	if pr.Obfuscation {
 		p.Rename.Enabled = true
 		p.Strings.Enabled = true

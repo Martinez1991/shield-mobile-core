@@ -66,10 +66,10 @@ func usage() {
 
 Usage:
   shield analyze   <smali-dir> [--json]
-  shield obfuscate <smali-dir> --out <dir> [--policy p.json | --preset name]
-                   [--in-place] [--mapping f] [--report f]
-  shield protect   <app.apk|.aab|.ipa> --out <f> [--policy p.json | --preset name]
-                   [--ks keystore --ks-pass p --ks-alias a]
+  shield obfuscate [smali-dir] --out <dir> [--config shield.yml] [--policy p.json | --preset name]
+                   [--antidebug] [--antitampering] [--antifuto] [--in-place] [--mapping f] [--report f]
+  shield protect   [app.apk|.aab|.ipa] --out <f> [--config shield.yml] [--policy p.json | --preset name]
+                   [--antidebug] [--antitampering] [--antifuto] [--ks keystore --ks-pass p --ks-alias a]
   shield policy    show <preset> | validate <policy.json>
   shield retrace   <mapping.txt> [trace-file]   (trace on stdin if omitted)
   shield version
@@ -160,6 +160,9 @@ func cmdObfuscate(args []string) {
 	logFormat := fs.String("log-format", "text", "structured log format: text|json")
 	cacheDir := fs.String("cache", "", "content-addressed build cache dir (reuse output for identical input+policy)")
 	configPath := fs.String("config", "", "shield.yml/.json config (supplies protection, input, output)")
+	antidebug := fs.Bool("antidebug", false, "enable RASP anti-debug (root/debugger/Frida/emulator)")
+	antitampering := fs.Bool("antitampering", false, "enable native anti-tamper (self-checksum)")
+	antifuto := fs.Bool("antifuto", false, "enable anti-theft/extraction (tamper + RASP)")
 	src, rest := splitSubject(args)
 	_ = fs.Parse(rest)
 
@@ -203,6 +206,7 @@ func cmdObfuscate(args []string) {
 	} else {
 		pol = resolvePolicy(*policyPath, *preset)
 	}
+	pol = config.Protection{Antidebug: *antidebug, Antitampering: *antitampering, Antifuto: *antifuto}.Apply(pol)
 	if src == "" {
 		die(20, "obfuscate: missing <smali-dir> (pass it as the first argument or set 'input:' in --config)")
 	}
@@ -323,15 +327,40 @@ func cmdProtect(args []string) {
 	ksAlias := fs.String("ks-alias", "", "key alias")
 	verbose := fs.Bool("verbose", false, "debug-level structured logs")
 	logFormat := fs.String("log-format", "text", "structured log format: text|json")
+	configPath := fs.String("config", "", "shield.yml/.json config (supplies protection, input, output)")
+	antidebug := fs.Bool("antidebug", false, "enable RASP anti-debug (root/debugger/Frida/emulator)")
+	antitampering := fs.Bool("antitampering", false, "enable native anti-tamper (self-checksum)")
+	antifuto := fs.Bool("antifuto", false, "enable anti-theft/extraction (tamper + RASP)")
 	input, rest := splitSubject(args)
-	if input == "" {
-		die(20, "protect: missing <app.apk> (must be the first argument)")
-	}
 	_ = fs.Parse(rest)
-	if *out == "" {
-		die(20, "protect: --out required")
+
+	var pol policy.Policy
+	if *configPath != "" {
+		cfg, err := config.Load(*configPath)
+		if err != nil {
+			die(20, "config: %v", err)
+		}
+		base := *preset
+		if cfg.Preset != "" {
+			base = cfg.Preset
+		}
+		pol = cfg.ToPolicy(policy.Preset(base))
+		if input == "" {
+			input = cfg.Input
+		}
+		if *out == "" {
+			*out = cfg.Output
+		}
+	} else {
+		pol = resolvePolicy(*policyPath, *preset)
 	}
-	pol := resolvePolicy(*policyPath, *preset)
+	pol = config.Protection{Antidebug: *antidebug, Antitampering: *antitampering, Antifuto: *antifuto}.Apply(pol)
+	if input == "" {
+		die(20, "protect: missing <app.apk> (pass it as the first argument or set 'input:' in --config)")
+	}
+	if *out == "" {
+		die(20, "protect: --out required (or set 'output:' in --config)")
+	}
 	log := obs.NewLogger(os.Stderr, *logFormat, *verbose)
 	bid := obs.BuildID(input, pol.Name, strconv.FormatInt(pol.Seed, 10))
 	// CWE-214: the password is never a CLI flag. Source it from a file or env.
