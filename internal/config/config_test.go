@@ -105,6 +105,35 @@ func TestUnsupportedExtension(t *testing.T) {
 	}
 }
 
+func TestWalkSmali(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"src/a/Foo.smali", "src/tests/Bar.smali", "lib/Baz.smali", "notes.txt"} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(".class"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sel := NewSelector([]string{"src/**"}, []string{"src/tests/**"})
+	selected, excluded, err := sel.WalkSmali(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// only .smali files; src/a selected, src/tests excluded, lib excluded (not in include), notes.txt ignored.
+	if len(selected) != 1 || selected[0] != "src/a/Foo.smali" {
+		t.Errorf("selected = %v", selected)
+	}
+	if len(excluded) != 2 || excluded[0] != "lib/Baz.smali" || excluded[1] != "src/tests/Bar.smali" {
+		t.Errorf("excluded = %v", excluded)
+	}
+}
+
+func TestClassDescriptor(t *testing.T) {
+	if got := ClassDescriptor("com/foo/Bar.smali"); got != "Lcom/foo/Bar;" {
+		t.Errorf("ClassDescriptor = %q", got)
+	}
+}
+
 func TestSelector(t *testing.T) {
 	cases := []struct {
 		include, exclude []string

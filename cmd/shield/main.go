@@ -180,6 +180,26 @@ func cmdObfuscate(args []string) {
 		if *out == "" {
 			*out = cfg.Output
 		}
+		// Selective targeting: classes not matched by the include/exclude globs
+		// are kept from renaming (their names stay stable). A processed-files
+		// report goes to stderr. (Gating the remaining local passes per-class is
+		// a follow-up that must be validated through the golden/ART gate.)
+		if src != "" && (len(cfg.Include) > 0 || len(cfg.Exclude) > 0) {
+			selected, excluded, werr := cfg.Selector().WalkSmali(src)
+			if werr != nil {
+				die(10, "select: %v", werr)
+			}
+			for _, e := range excluded {
+				pol.Rename.KeepClasses = append(pol.Rename.KeepClasses, config.ClassDescriptor(e))
+			}
+			fmt.Fprintf(os.Stderr, "selective: %d smali selected, %d excluded (kept from rename)\n",
+				len(selected), len(excluded))
+			if *verbose {
+				for _, e := range excluded {
+					fmt.Fprintln(os.Stderr, "  excluded:", e)
+				}
+			}
+		}
 	} else {
 		pol = resolvePolicy(*policyPath, *preset)
 	}

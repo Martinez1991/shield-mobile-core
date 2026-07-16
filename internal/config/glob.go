@@ -1,7 +1,10 @@
 package config
 
 import (
+	"io/fs"
 	"path"
+	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -58,6 +61,40 @@ func (s *Selector) Match(p string) bool {
 func matchGlob(pattern, name string) bool {
 	return matchSegs(strings.Split(strings.Trim(pattern, "/"), "/"),
 		strings.Split(strings.Trim(name, "/"), "/"))
+}
+
+// WalkSmali walks root for .smali files and splits their root-relative,
+// slash-separated paths into the selected and excluded sets. Both are sorted.
+func (s *Selector) WalkSmali(root string) (selected, excluded []string, err error) {
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, e error) error {
+		if e != nil {
+			return e
+		}
+		if d.IsDir() || !strings.HasSuffix(p, ".smali") {
+			return nil
+		}
+		rel, e := filepath.Rel(root, p)
+		if e != nil {
+			return e
+		}
+		rel = filepath.ToSlash(rel)
+		if s.Match(rel) {
+			selected = append(selected, rel)
+		} else {
+			excluded = append(excluded, rel)
+		}
+		return nil
+	})
+	sort.Strings(selected)
+	sort.Strings(excluded)
+	return selected, excluded, err
+}
+
+// ClassDescriptor maps a root-relative smali path to its Dalvik class descriptor
+// ("com/foo/Bar.smali" -> "Lcom/foo/Bar;"), for building rename keep-rules.
+func ClassDescriptor(relSmaliPath string) string {
+	p := strings.TrimSuffix(filepath.ToSlash(relSmaliPath), ".smali")
+	return "L" + p + ";"
 }
 
 func matchSegs(pat, name []string) bool {
