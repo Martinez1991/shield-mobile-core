@@ -64,6 +64,28 @@ shield retrace out/mapping.txt crash.txt   # ou: cat crash.txt | shield retrace 
 
 Códigos de saída (doc §12): `0` ok · `≥10` falha de proteção · `≥20` falha de policy.
 
+## Docker & GitHub Action
+
+Imagem oficial (CLI Go, CGO-free, distroless — publicada em `ghcr.io/martinez1991/shield-mobile-core`):
+
+```bash
+docker run --rm -v "$PWD:/work" ghcr.io/martinez1991/shield-mobile-core:latest \
+  obfuscate --config shield.yml
+```
+
+GitHub Action (lê o `shield.yml` e roda a proteção no pipeline):
+
+```yaml
+- uses: Martinez1991/shield-mobile-core@v0.6.0
+  with:
+    command: obfuscate      # obfuscate | analyze | policy
+    config: shield.yml
+```
+
+A imagem cobre `analyze`/`obfuscate`/`policy`/`retrace` (incl. `--config`). O
+`protect` completo (round-trip de APK) precisa adicionalmente de apktool/apksigner —
+uma variante de imagem com toolchain é follow-up.
+
 ## Técnicas implementadas (mapeadas ao documento)
 
 | Doc | Técnica | Status | Notas |
