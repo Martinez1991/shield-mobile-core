@@ -1,0 +1,32 @@
+# SHIELD project config — reusable, versionable, CI-friendly.
+#   shield obfuscate --config shield.yml
+#
+# Supported by a zero-dependency YAML subset reader: key: value, nested maps
+# (2-space indent), "- item" sequences, # comments, quoted scalars. No flow
+# style / anchors / tabs. `shield.json` with the same shape also works.
+version: 1
+
+# Input smali project and where to write the protected output. A CLI positional
+# argument and --out override these.
+input: ./examples/smali
+output: ./protected
+
+# Optional base preset the protection toggles extend (prod-high|balanced|minimal|default).
+preset: balanced
+
+# High-level protection outcomes -> concrete engine passes:
+protection:
+  obfuscation: true      # rename + string encryption + control-flow + metadata strip
+  antidebug: true        # RASP: root/debugger/emulator/Frida/Xposed detection
+  antitampering: true    # native self-checksum (tamper) integrity guard
+  antifuto: false        # anti-theft/extraction (tamper + RASP; device-binding is roadmap)
+
+# Selective targeting by glob: `*` = one path segment, `**` = any depth,
+# a leading `!` (or the exclude list) negates. With no include, everything is
+# selected. (Per-file gating in the engine is being wired; today these drive
+# the selection report.)
+include:
+  - "**"
+exclude:
+  - "**/BuildConfig.smali"
+  - "**/R.smali"

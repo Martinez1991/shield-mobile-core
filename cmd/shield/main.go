@@ -25,6 +25,7 @@ import (
 	"github.com/Martinez1991/shield-mobile-core/internal/analyze"
 	"github.com/Martinez1991/shield-mobile-core/internal/apk"
 	"github.com/Martinez1991/shield-mobile-core/internal/cache"
+	"github.com/Martinez1991/shield-mobile-core/internal/config"
 	"github.com/Martinez1991/shield-mobile-core/internal/inspect"
 	"github.com/Martinez1991/shield-mobile-core/internal/retrace"
 	"github.com/Martinez1991/shield-mobile-core/obs"
@@ -158,12 +159,33 @@ func cmdObfuscate(args []string) {
 	verbose := fs.Bool("verbose", false, "debug-level structured logs")
 	logFormat := fs.String("log-format", "text", "structured log format: text|json")
 	cacheDir := fs.String("cache", "", "content-addressed build cache dir (reuse output for identical input+policy)")
+	configPath := fs.String("config", "", "shield.yml/.json config (supplies protection, input, output)")
 	src, rest := splitSubject(args)
-	if src == "" {
-		die(20, "obfuscate: missing <smali-dir> (must be the first argument)")
-	}
 	_ = fs.Parse(rest)
-	pol := resolvePolicy(*policyPath, *preset)
+
+	var pol policy.Policy
+	if *configPath != "" {
+		cfg, err := config.Load(*configPath)
+		if err != nil {
+			die(20, "config: %v", err)
+		}
+		base := *preset
+		if cfg.Preset != "" {
+			base = cfg.Preset
+		}
+		pol = cfg.ToPolicy(policy.Preset(base))
+		if src == "" {
+			src = cfg.Input
+		}
+		if *out == "" {
+			*out = cfg.Output
+		}
+	} else {
+		pol = resolvePolicy(*policyPath, *preset)
+	}
+	if src == "" {
+		die(20, "obfuscate: missing <smali-dir> (pass it as the first argument or set 'input:' in --config)")
+	}
 	if pol.Rename.Enabled && !pol.RenameScoped() {
 		fmt.Fprintln(os.Stderr, "warning: rename enabled but no includePrefixes set — renaming will be skipped (unscoped, unsafe). Use a policy file with rename.includePrefixes.")
 	}
