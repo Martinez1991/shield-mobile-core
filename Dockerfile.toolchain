@@ -1,0 +1,44 @@
+# SHIELD Mobile Core — toolchain image (tag suffix `-toolchain`).
+#
+# Same `shield` CLI as the minimal distroless image, plus the external tools the
+# full `protect` APK/AAB round-trip shells out to:
+#   - apktool  (DEX <-> smali; needs a JRE)
+#   - apksigner + zipalign (Android build-tools; only used when a keystore is given)
+#
+# Use this tag for `shield protect`:
+#   docker run --rm -v "$PWD:/work" ghcr.io/martinez1991/shield-mobile-core:latest-toolchain \
+#     protect app.apk --out app-protected.apk --preset prod-high \
+#            --ks my.keystore --ks-alias mykey --ks-pass-file ks.pass
+#
+# The distroless `:latest` stays the default for analyze / obfuscate / policy /
+# retrace, which are pure Go and need none of this.
+
+# --- build the static shield binary (identical to the minimal image) ---
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY . .
+# Zero-dependency, CGO-free: no module download, fully static binary.
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/shield ./cmd/shield
+
+# --- runtime: JRE + apktool + Android build-tools ---
+FROM eclipse-temurin:17-jre-jammy
+ARG APKTOOL_VERSION=2.9.3
+ARG BUILD_TOOLS=build-tools_r34-linux
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wget unzip ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ # apktool: a thin JVM wrapper around the release jar
+ && wget -qO /usr/local/lib/apktool.jar \
+      "https://github.com/iBotPeaches/Apktool/releases/download/v${APKTOOL_VERSION}/apktool_${APKTOOL_VERSION}.jar" \
+ && printf '#!/bin/sh\nexec java -jar /usr/local/lib/apktool.jar "$@"\n' > /usr/local/bin/apktool \
+ && chmod +x /usr/local/bin/apktool \
+ # Android build-tools: apksigner (JVM) + zipalign (native)
+ && wget -qO /tmp/bt.zip "https://dl.google.com/android/repository/${BUILD_TOOLS}.zip" \
+ && unzip -q /tmp/bt.zip -d /opt && rm /tmp/bt.zip \
+ && mv /opt/android-* /opt/android-build-tools \
+ && ln -s /opt/android-build-tools/apksigner /usr/local/bin/apksigner \
+ && ln -s /opt/android-build-tools/zipalign  /usr/local/bin/zipalign
+COPY --from=build /out/shield /usr/local/bin/shield
+WORKDIR /work
+ENTRYPOINT ["/usr/local/bin/shield"]
+CMD ["version"]

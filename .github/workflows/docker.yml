@@ -1,7 +1,9 @@
 name: docker
 
-# Build the SHIELD CLI image. On PRs it builds + smoke-tests the image (no push);
+# Build the SHIELD CLI images. On PRs it builds + smoke-tests each image (no push);
 # on main and version tags it publishes to GHCR (ghcr.io/<owner>/shield-mobile-core).
+# Two variants: the minimal distroless image (analyze/obfuscate/policy/retrace) and
+# a `-toolchain` image that adds apktool/apksigner for the full `protect` round-trip.
 
 on:
   push:
@@ -9,6 +11,7 @@ on:
     tags: ['v*']
     paths:
       - 'Dockerfile'
+      - 'Dockerfile.toolchain'
       - '.dockerignore'
       - 'cmd/**'
       - 'engine/**'
@@ -21,6 +24,7 @@ on:
   pull_request:
     paths:
       - 'Dockerfile'
+      - 'Dockerfile.toolchain'
       - '.dockerignore'
       - 'cmd/**'
       - 'go.mod'
@@ -34,8 +38,18 @@ permissions:
 
 jobs:
   image:
-    name: build (+ push on main/tags)
+    name: build ${{ matrix.name }} (+ push on main/tags)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: minimal
+            dockerfile: Dockerfile
+            suffix: ''
+          - name: toolchain
+            dockerfile: Dockerfile.toolchain
+            suffix: '-toolchain'
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -53,6 +67,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # The suffix applies to every tag, including `latest` (onlatest=true),
+          # so the toolchain variant publishes `latest-toolchain`, `vX.Y.Z-toolchain`, …
+          flavor: |
+            suffix=${{ matrix.suffix }},onlatest=true
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
@@ -62,16 +80,22 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           load: ${{ github.event_name == 'pull_request' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       - name: Smoke test the built image
         if: github.event_name == 'pull_request'
         run: |
+          set -euo pipefail
           img=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -1)
           echo "running: $img version"
           docker run --rm "$img" version
+          if [ "${{ matrix.name }}" = "toolchain" ]; then
+            echo "checking protect toolchain is present"
+            docker run --rm --entrypoint sh "$img" -c 'apktool --version && apksigner --version >/dev/null && echo apksigner-ok'
+          fi
