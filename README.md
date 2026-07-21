@@ -82,9 +82,103 @@ GitHub Action (lê o `shield.yml` e roda a proteção no pipeline):
     config: shield.yml
 ```
 
-A imagem cobre `analyze`/`obfuscate`/`policy`/`retrace` (incl. `--config`). O
-`protect` completo (round-trip de APK) precisa adicionalmente de apktool/apksigner —
-uma variante de imagem com toolchain é follow-up.
+A imagem `:latest` (distroless) cobre `analyze`/`obfuscate`/`policy`/`retrace`
+(incl. `--config`). O `protect` completo (round-trip de APK) precisa
+adicionalmente de **apktool/apksigner** — use a variante **`-toolchain`**, que já
+os empacota:
+
+```bash
+docker run --rm -v "$PWD:/work" ghcr.io/martinez1991/shield-mobile-core:latest-toolchain \
+  protect app.apk --out app-protected.apk --preset prod-high \
+         --ks release.jks --ks-alias chave --ks-pass-file pass.txt
+```
+
+Veja **[Assinando o app protegido](#assinando-o-app-protegido-android)** para o
+fluxo de assinatura (keystore vs certificado) e a solução dos erros comuns.
+
+## Assinando o app protegido (Android)
+
+Todo APK/AAB protegido precisa ser **assinado** antes de instalar num device ou
+publicar. **A assinatura é sempre a última alteração** — ela encapsula o conteúdo
+do pacote, então é a única mudança que você pode fazer num app protegido sem
+quebrá-lo. **Não rode `zipalign` depois de assinar** (se precisar alinhar, alinhe
+*antes*).
+
+### Keystore ≠ certificado
+
+Dois artefatos diferentes, e trocá-los é a causa dos erros mais comuns:
+
+| Artefato | O que é | Para que serve |
+|----------|---------|----------------|
+| **Keystore** (`.jks`/`.keystore`/`.p12`) | contém sua **chave privada** | **assinar** o app (`apksigner --ks ...`) |
+| **Certificado de assinatura** (`.pem`/`.der`) | chave **pública** derivada da privada | vincular o app à sua chave (*key-binding*, anti-adulteração) — **feature de roadmap; o SHIELD ainda não o consome** |
+
+> O certificado **nunca** vai no `--ks`. `--ks` recebe o **keystore** (com a chave
+> privada). É seguro compartilhar o certificado público; a chave privada, nunca.
+
+### Duas formas de assinar
+
+**(A) Inline, durante o `protect`** — o `protect` roda `apksigner` no final:
+
+```bash
+shield protect app.apk --out app-protected.apk --preset prod-high \
+  --ks release.jks --ks-alias chave --ks-pass-file pass.txt
+```
+A senha **nunca** vai no argv (CWE-214): use `--ks-pass-file <arquivo>` ou a env
+`SHIELD_KS_PASS`. O `--ks-alias` é **obrigatório** e precisa bater com a entrada
+de chave do keystore. (O `protect` usa a senha do store também para a chave; se a
+senha da chave for diferente da senha do store, assine pela forma **(B)**.)
+
+**(B) Separado, depois do `protect`** (recomendado quando você precisa de
+`zipalign`, de uma senha de chave distinta, ou de controle total):
+
+```bash
+# 1) proteger SEM assinar (sem as flags --ks*)
+shield protect app.apk --out app-protected-unsigned.apk --preset prod-high
+
+# 2) (opcional, p/ Google Play) alinhar ANTES de assinar
+zipalign -p -f 4 app-protected-unsigned.apk app-aligned.apk
+
+# 3) assinar — última etapa
+apksigner sign --ks release.jks --ks-key-alias chave app-aligned.apk
+
+# 4) conferir
+apksigner verify --print-certs app-aligned.apk
+```
+
+Não sabe o alias? Liste as entradas do keystore:
+
+```bash
+keytool -list -v -keystore release.jks
+```
+
+### Cenários de publicação
+
+- **APK assinado pelo desenvolvedor** — assine com sua chave (comandos acima). É
+  o APK que você instala/distribui.
+- **APK via Google Play (Play App Signing)** — assine com a sua **chave de
+  upload** (`apksigner sign --ks upload.jks --ks-key-alias upload <apk>`); o Google
+  re-assina com a chave de assinatura dele. O APK assinado só com a upload key não
+  serve para testar — baixe do Play o APK assinado pelo Google.
+- **AAB via Google Play** — assine o bundle com `jarsigner` e a chave de upload:
+  ```bash
+  jarsigner -keystore upload.jks -keypass <senha-chave> -storepass <senha-store> \
+    app-protected.aab <alias>
+  ```
+
+### Solução de problemas (erros comuns)
+
+| Erro | Causa | Correção |
+|------|-------|----------|
+| `keystore ... doesn't have the key` / "não possui a chave" | `--ks-alias` errado, keystore sem chave privada nesse alias, ou senha incorreta | confira com `keytool -list -v -keystore ...`; use o alias/senha corretos; se a senha da chave difere da do store, assine pela forma **(B)** |
+| `apksigner failed ... toDerInputStream rejects tag type 66` | você passou o **certificado** (`.pem`/`.der`) no `--ks` | `--ks` recebe o **keystore** (com a chave privada), não o certificado |
+| `apktool not found on PATH` | usou a imagem `:latest` (distroless) para `protect` | use a imagem **`:latest-toolchain`** |
+| `Invalid register: vNN. Must be between v0 and v15` | cifra de strings usando `invoke` não-range num registrador alto (v16+) — corrigido no `main` (usa `/range`) | atualize a imagem `:latest-toolchain` (`docker pull`) |
+
+> Se o seu app usa **Play App Signing**, o certificado que a Verimatrix (ou
+> qualquer ferramenta de *key-binding*) pede é o **App Signing Certificate** do
+> Play Console → *Integridade do app*. No SHIELD atual isso não é necessário: você
+> apenas **assina** o app protegido com a sua chave (upload key).
 
 ## Técnicas implementadas (mapeadas ao documento)
 
