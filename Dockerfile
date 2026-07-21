@@ -1,8 +1,11 @@
-# SHIELD Mobile Core — CLI image. The engine is pure Go / CGO-free, so the final
-# image is a tiny distroless static binary (non-root). Covers analyze, obfuscate
-# (incl. --config shield.yml), policy and retrace. The full `protect` APK/AAB
-# round-trip additionally needs apktool/apksigner — a toolchain image variant is
-# tracked as a follow-up; the LLVM native-svc is a separate out-of-tree build.
+# SHIELD Mobile Core — minimal CLI image (tag `latest` / `vX.Y.Z`). The engine is
+# pure Go / CGO-free, so this is a tiny distroless static binary (non-root). Covers
+# analyze, obfuscate (incl. --config shield.yml), policy and retrace.
+#
+# The full `protect` APK/AAB round-trip additionally shells out to apktool and
+# apksigner — use the `-toolchain` image variant (Dockerfile.toolchain,
+# ghcr.io/<owner>/shield-mobile-core:latest-toolchain) for that. The LLVM
+# native-svc is a separate out-of-tree build.
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY . .
