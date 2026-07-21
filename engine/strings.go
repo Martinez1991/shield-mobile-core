@@ -14,6 +14,37 @@ const decryptorDescriptor = "Lshield/rt/SH;"
 
 var constStringRE = regexp.MustCompile(`^(\s*)const-string(/jumbo)?\s+([vp]\d+),\s+"(.*)"\s*$`)
 
+// decryptInvoke builds the call to the injected decryptor for the string held in
+// reg. A non-range invoke encodes its register argument in 4 bits (v0–v15), but
+// const-string allows an 8-bit register — so when the string sits in a higher
+// register (common in large methods, e.g. generated protobuf classes) the
+// non-range form is invalid dalvik and smali assembly fails ("Invalid register:
+// v17. Must be between v0 and v15"). Use the /range form there, which encodes the
+// register in 16 bits. Parameter registers (pN) are the highest-numbered in a
+// method, so they are treated conservatively as needing /range.
+func decryptInvoke(indent, reg string) string {
+	if invokeNeedsRange(reg) {
+		return fmt.Sprintf(`%sinvoke-static/range {%s .. %s}, %s->d(Ljava/lang/String;)Ljava/lang/String;`, indent, reg, reg, decryptorDescriptor)
+	}
+	return fmt.Sprintf(`%sinvoke-static {%s}, %s->d(Ljava/lang/String;)Ljava/lang/String;`, indent, reg, decryptorDescriptor)
+}
+
+// invokeNeedsRange reports whether a non-range invoke on reg would overflow the
+// 4-bit register field (v0–v15).
+func invokeNeedsRange(reg string) bool {
+	if len(reg) < 2 {
+		return false
+	}
+	switch reg[0] {
+	case 'p':
+		return true
+	case 'v':
+		n, err := strconv.Atoi(reg[1:])
+		return err == nil && n >= 16
+	}
+	return false
+}
+
 // passStrings encrypts eligible string literals (section 3.3). Each
 // `const-string vX, "secret"` becomes a call to the injected decryptor so the
 // plaintext never appears in the DEX. algo is "xor" or "aes". Returns count.
@@ -50,7 +81,7 @@ func passStrings(classes []*smali.Class, minLen int, algo string, seed int64) in
 			enc := encode(val)
 			out = append(out,
 				fmt.Sprintf(`%sconst-string%s %s, "%s"`, indent, jumbo, reg, enc),
-				fmt.Sprintf(`%sinvoke-static {%s}, %s->d(Ljava/lang/String;)Ljava/lang/String;`, indent, reg, decryptorDescriptor),
+				decryptInvoke(indent, reg),
 				fmt.Sprintf(`%smove-result-object %s`, indent, reg),
 			)
 			count++
