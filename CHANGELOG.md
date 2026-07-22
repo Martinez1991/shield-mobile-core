@@ -3,6 +3,44 @@
 All notable changes to SHIELD. Format loosely follows [Keep a Changelog];
 versions are git tags with a matching GitHub release.
 
+## [0.7.0] — 2026-07-22
+
+Project configuration, distribution (Docker image + GitHub Action), MobSF
+integration, and the full-`protect` toolchain image — plus a smali register-safety
+fix and a signing guide. The engine is unchanged: stdlib-only, CGO-free,
+golden/ART green.
+
+- **Project config `shield.yml` / `shield.json` + glob selective targeting**
+  (#2, #4) — declarative per-project config (passes, targets) read via `--config`;
+  a glob file-walk selects which inputs are processed, with a processed-files
+  report. Lets a repo commit its protection policy.
+- **Direct protection flags + `--config` on `protect`** (#5) — `--antidebug`,
+  `--antitampering`, `--antifuto` toggles and `--config shield.yml` on the
+  `obfuscate`/`protect` commands, so common setups need no policy JSON.
+- **Official Docker image + GitHub Action** (#3) — `ghcr.io/martinez1991/
+  shield-mobile-core` (distroless, CGO-free) and a composite Action
+  (`Martinez1991/shield-mobile-core@v0.7.0`) that reads `shield.yml` and runs the
+  protection in a pipeline.
+- **`-toolchain` image variant for the full APK/AAB round-trip** (#7) — the
+  distroless `:latest` covers `analyze`/`obfuscate`/`policy`/`retrace`; the new
+  `:latest-toolchain` adds **apktool + apksigner + zipalign** so `shield protect`
+  works out of the box. The docker workflow publishes both.
+- **MobSF integration (MAST)** (#1) — a MobSF REST client and an
+  analyze → protect → verify orchestration, wiring the mobile-app security test
+  loop around the engine.
+- **String-encrypt register-safety fix** (#8) — the injected decryptor call now
+  uses the `/range` invoke form when the string sits in a register ≥ v16 (or a
+  parameter register). The non-range form encodes the register in 4 bits (v0–v15),
+  so it produced invalid dalvik on large methods (e.g. generated protobuf classes),
+  failing `protect` on real APKs with *"Invalid register: v17…"*. Verified against
+  a real smali assembler.
+- **Signing guide** (#9) — a README section on signing a protected app: the
+  keystore-vs-certificate distinction (the public certificate never goes in
+  `--ks`), inline vs separate signing, Google Play upload/app-signing keys, AAB via
+  `jarsigner`, and a troubleshooting table for the common errors.
+- **Fuzz stabilization** (#6) — deterministic seed-corpus fuzzing on PRs (fast,
+  flake-free) with continuous fuzzing moved to a nightly workflow.
+
 ## [0.6.0] — 2026-07-15
 
 Opens the iOS front on the free macos-14 runners (Mach-O strip + Simulator

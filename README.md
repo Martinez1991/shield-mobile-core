@@ -76,7 +76,7 @@ docker run --rm -v "$PWD:/work" ghcr.io/martinez1991/shield-mobile-core:latest \
 GitHub Action (lê o `shield.yml` e roda a proteção no pipeline):
 
 ```yaml
-- uses: Martinez1991/shield-mobile-core@v0.6.0
+- uses: Martinez1991/shield-mobile-core@v0.7.0
   with:
     command: obfuscate      # obfuscate | analyze | policy
     config: shield.yml
@@ -198,7 +198,7 @@ keytool -list -v -keystore release.jks
 | P2 | **Determinismo** | ✅ | Mesmo input + policy + seed ⇒ output idêntico (testado). |
 | P4 | **Policy-as-Code** | ✅ | Policy JSON versionável + presets + validação. |
 
-### Plataforma (v0.5.0 → v0.6.0)
+### Plataforma (v0.5.0 → v0.7.0)
 
 | Capacidade | Status | Notas |
 |-----------|--------|-------|
